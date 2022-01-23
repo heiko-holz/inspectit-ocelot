@@ -49,7 +49,7 @@ services:
 
   #  Petclinic
   config-server:
-    image: inspectit/spring-petclinic-config-server:${INSPECTIT_PETCLINIC_VERSION}
+    image: miinovatec/spring-petclinic-config-server:${INSPECTIT_PETCLINIC_VERSION}
     container_name: config-server
     hostname: config-server
     environment:
@@ -72,7 +72,7 @@ services:
      - 8888:8888
 
   discovery-server:
-    image: inspectit/spring-petclinic-discovery-server:${INSPECTIT_PETCLINIC_VERSION}
+    image: miinovatec/spring-petclinic-discovery-server:${INSPECTIT_PETCLINIC_VERSION}
     container_name: discovery-server
     hostname: discovery-server
     environment:
@@ -96,7 +96,7 @@ services:
      - 8761:8761
 
   customers-service:
-    image: inspectit/spring-petclinic-customers-service:${INSPECTIT_PETCLINIC_VERSION}
+    image: miinovatec/spring-petclinic-customers-service:${INSPECTIT_PETCLINIC_VERSION}
     container_name: customers-service
     hostname: customers-service
     environment:
@@ -121,7 +121,7 @@ services:
       - 8081:8081
 
   visits-service:
-    image: inspectit/spring-petclinic-visits-service:${INSPECTIT_PETCLINIC_VERSION}
+    image: miinovatec/spring-petclinic-visits-service:${INSPECTIT_PETCLINIC_VERSION}
     container_name: visits-service
     hostname: visits-service
     environment:
@@ -146,7 +146,7 @@ services:
      - 8082:8082
 
   vets-service:
-    image: inspectit/spring-petclinic-vets-service:${INSPECTIT_PETCLINIC_VERSION}
+    image: miinovatec/spring-petclinic-vets-service:${INSPECTIT_PETCLINIC_VERSION}
     container_name: vets-service
     hostname: vets-service
     environment:
@@ -171,7 +171,7 @@ services:
      - 8083:8083
 
   api-gateway:
-    image: inspectit/spring-petclinic-api-gateway:${INSPECTIT_PETCLINIC_VERSION}
+    image: miinovatec/spring-petclinic-api-gateway:${INSPECTIT_PETCLINIC_VERSION}
     container_name: api-gateway
     hostname: api-gateway
     environment:
