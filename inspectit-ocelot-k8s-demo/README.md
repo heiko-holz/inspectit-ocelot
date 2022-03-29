@@ -1,8 +1,12 @@
-# Trading-Demo in Kubernetes instrumented with InspectIT Ocelot and OpenTelemetry Collector
+# Trading-Demo in Kubernetes instrumented with inspectIT Ocelot and OpenTelemetry Collector
 
-This demo deploys the [trading demo application](https://github.com/inspectIT/trading-demo-application) to Kubernetes and adds instrumentation with [InspectIT Ocelot](https://github.com/inspectIT/inspectit-ocelot) and the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector) and exports traces to [Jaeger](https://www.jaegertracing.io/). The InspectIT Ocelot Agent and OpenTelemetry Collector Agent Sidecar injection is done with the [OpenTelemetry Operator](https://github.com/open-telemetry/opentelemetry-operator).
+This demo deploys the [trading demo application](https://github.com/inspectIT/trading-demo-application) to Kubernetes and adds instrumentation with [inspectIT Ocelot](https://github.com/inspectIT/inspectit-ocelot) and the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector) and exports traces to [Jaeger](https://www.jaegertracing.io/). The inspectIT Ocelot Agent and OpenTelemetry Collector Agent Sidecar injection is done with the [OpenTelemetry Operator](https://github.com/open-telemetry/opentelemetry-operator).
 
-This tutorial based on the official [InspectIT Ocelot installation documentation](https://inspectit.github.io/inspectit-ocelot/docs/next/getting-started/installation#using-the-agent-with-kubernetes).
+This tutorial based on the official [inspectIT Ocelot installation documentation](https://inspectit.github.io/inspectit-ocelot/docs/next/getting-started/installation#using-the-agent-with-kubernetes).
+
+Please note that we are showcasing to deploy the OpenTelemetry Collector Agent as a sidecar for illustrative purposes. The sidecar in this demo just receives, batches, and exports the traces. Imagine a use case in which a lot of traces received by the OpenTelemetry Collector should be filtered out, e.g., when a lot of readiness or liveliness probes are sent. In this scenario, it may be good to filter out these traces as close to the instrumented application as possible before sending the final traces over the network to the Collector deployment or to a Jaeger backend. Further, the OpenTelemetry Collector `deployment` also just received, batches, and exports the traces to Jaeger. Imagine a use case where we receive traces from different use cases. In this case, standardization of the traces using the OpenTelemetry Collector is a good way before sending the traces to the desired backend.
+
+However, the alternative to deploy the trading demo application without the sidecar and directly export to the OpenTelemetry Collector deployment may be more appropriate in the given context.
 
 ## 1. Requirements
 
@@ -31,7 +35,7 @@ This tutorial based on the official [InspectIT Ocelot installation documentation
        kubectl apply -f https://github.com/open-telemetry/opentelemetry-operator/releases/download/v{version}/opentelemetry-operator.yaml
        ```
       * If you follow the instruction, it automatically deploys the OpenTelemetryCollector to the `opentelemetry-operator-system` namespace
-2. Create the namespace `trading-demo` in which the [Trading Demo Application](#3-deploy-the-trading-demo-application), the [InspectIT Ocelot Instrumentation](#1-deploy-inspectit-ocelot-agent-as-an-instrumentation), and the [OpenTelemetry Collector Agent Sidecar](#2-deploy-the-opentelemetry-collector-agent-sidecar) will be deployed
+2. Create the namespace `trading-demo` in which the [Trading Demo Application](#3-deploy-the-trading-demo-application), the [inspectIT Ocelot Instrumentation](#1-deploy-inspectit-ocelot-agent-as-an-instrumentation), and the [OpenTelemetry Collector Agent Sidecar](#2-deploy-the-opentelemetry-collector-agent-sidecar) will be deployed
 
    ```shell
    kubectl create namespace trading-demo
@@ -172,7 +176,7 @@ The OpenTelemetry Collector as `Deployment` will be used to receive traces send 
         - name: jaeger-ace # Jaeger ACE receiver
           port: 6831
           protocol: TCP
-        - name: jaeger-inspectit # Jaeger InspectIT Ocelot receiver
+        - name: jaeger-inspectit # Jaeger inspectIT Ocelot receiver
           port: 14268
           targetPort: 14268
           protocol: TCP
@@ -305,7 +309,7 @@ The OpenTelemetry Collector as `Deployment` will be used to receive traces send 
 
 ### 2. Deploy the OpenTelemetry Collector Agent `sidecar`
 
-> **Important**: If you do not want to inject the OpenTelemetry Collector Agent as a `sidecar` and directly send the traces to the [OpenTelemetry Collector deployment](#1-the-opentelemetry-collector-as--deployment), you can skip this step and re-configure Jaeger endpoint url in the [InspectIT Ocelot Configuration Server](#2-deploy-the-inspectit-ocelot-configuration-server).
+> **Important**: If you do not want to inject the OpenTelemetry Collector Agent as a `sidecar` and directly send the traces to the [OpenTelemetry Collector deployment](#1-the-opentelemetry-collector-as--deployment), you can skip this step and re-configure Jaeger endpoint url in the [inspectIT Ocelot Configuration Server](#2-deploy-the-inspectit-ocelot-configuration-server).
 
 We will inject an OpenTelemetry Collector as a `sidecar` into the trading demo application using the [OpenTelemetry Operator](https://github.com/open-telemetry/opentelemetry-operator#sidecar-injection). 
 
@@ -386,13 +390,13 @@ We will inject an OpenTelemetry Collector as a `sidecar` into the trading demo a
        otelcol-sidecar   sidecar   0.47.0    1m
        ```
 
-## 4. Deploy InspectIT Ocelot
+## 4. Deploy inspectIT Ocelot
 
-### 1. Deploy InspectIT Ocelot Agent as an `Instrumentation`
+### 1. Deploy inspectIT Ocelot Agent as an `Instrumentation`
 
-Following the [official readme](https://inspectit.github.io/inspectit-ocelot/docs/next/getting-started/installation#using-the-agent-with-kubernetes) from InspectIT Ocelot, we will deploy the InspectIT Ocelot Agent as an `Instrumentation`, that will be automatically injected into the trading demo application by the OpenTelemetry Operator. You can find the file in `./inspectit-ocelot/inspectit-ocelot-instrumentation.yaml`.
+Following the [official readme](https://inspectit.github.io/inspectit-ocelot/docs/next/getting-started/installation#using-the-agent-with-kubernetes) from inspectIT Ocelot, we will deploy the inspectIT Ocelot Agent as an `Instrumentation`, that will be automatically injected into the trading demo application by the OpenTelemetry Operator. You can find the file in `./inspectit-ocelot/inspectit-ocelot-instrumentation.yaml`.
 
-1. Deploy the InspectIT Ocelot instrumentation in the `trading-demo` namespace:
+1. Deploy the inspectIT Ocelot instrumentation in the `trading-demo` namespace:
 
     ```shell
     kubectl apply -f ./inspectit-ocelot/inspectit-ocelot-instrumentation.yaml -n trading-demo
@@ -410,18 +414,18 @@ Following the [official readme](https://inspectit.github.io/inspectit-ocelot/doc
     inspectit-ocelot-instrumentation   1m
     ```
 
-### 2. Deploy the InspectIT Ocelot Configuration Server
+### 2. Deploy the inspectIT Ocelot Configuration Server
 
-We will deploy the InspectIT Ocelot Configuration Server following the [official readme](https://github.com/inspectIT/inspectit-ocelot/tree/master/components/inspectit-ocelot-configurationserver/k8s).
+We will deploy the inspectIT Ocelot Configuration Server following the [official readme](https://github.com/inspectIT/inspectit-ocelot/tree/master/components/inspectit-ocelot-configurationserver/k8s).
 
 You can find the file in `./inspectit/inspectit-ocelot-configurationserver.yaml`
 
-1. Deploy the InspectIT Ocelot Configuration Server in the `inspectit-ocelot` namespace:
+1. Deploy the inspectIT Ocelot Configuration Server in the `inspectit-ocelot` namespace:
     ```shell
     kubectl apply -f ./inspectit-ocelot/inspectit-ocelot-configurationserver.yaml 
     ```
     
-      * we configure InspectIT Ocelot to trace all methods from the trading demo frontend and backend
+      * we configure inspectIT Ocelot to trace all methods from the trading demo frontend and backend
     
 2. Verify the deployment
    ```shell
@@ -443,7 +447,7 @@ You can find the file in `./inspectit/inspectit-ocelot-configurationserver.yaml`
      replicaset.apps/inspectit-ocelot-configurationserver-5cbb4c4b6c   1         1         1       1m
      ```
 
-3. Use `port-forward` to access the InspectIT Ocelot Configuration Server on [http://localhost:8090](http://localhost:8090)
+3. Use `port-forward` to access the inspectIT Ocelot Configuration Server on [http://localhost:8090](http://localhost:8090)
 
     > open a new terminal
    
@@ -461,8 +465,8 @@ You can find the file in `./inspectit/inspectit-ocelot-configurationserver.yaml`
             enabled: ENABLED
             # when the OTEL collector agent is injected as a sidecar, we can go with 'localhost'
             url: http://localhost:14268/api/traces
-            # when the OTEL agent collector is deployed as an deployment, we need to address it directly
-            url: http://otel-agent.otel.svc.cluster.local:14268/api/traces
+            # when the OTEL collector is deployed as an deployment, we need to address it directly
+            url: http://otel-collector.otel.svc.cluster.local:14268/api/traces
 ```
 
 ## 3. Deploy the Trading Demo Application
@@ -552,7 +556,6 @@ spec:
           kubectl describe pod trading-demo-frontend -n trading-demo
           ```
       
-
 3. Use `port-forward` to access the Trading Demo Frontend on [http://localhost:8080](http://localhost:8080):
 
    > open a new terminal
@@ -603,7 +606,7 @@ Alternatively, if you don't want to inject the OpenTelemetry Collector Agent as 
 ### Links
 
 * Jaeger UI: [http://localhost:16686](http://localhost:16686)
-* InspectIT Ocelot Configuration Server: [http://localhost:8090](http://localhost:8090)
+* inspectIT Ocelot Configuration Server: [http://localhost:8090](http://localhost:8090)
 * Trading demo application frontend: [http://localhost:8080](http://localhost:8080)
 
 > **Important**: you can only access the components on localhost if you activated the port-fowarding as explained in the respective sections. 
