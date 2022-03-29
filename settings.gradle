@@ -11,3 +11,5 @@ include 'inspectit-ocelot-configdocsgenerator'
 project(':inspectit-ocelot-configurationserver').projectDir = new File('./components/inspectit-ocelot-configurationserver')
 project(':inspectit-ocelot-eum-server').projectDir = new File('./components/inspectit-ocelot-eum-server')
 project(':inspectit-ocelot-configdocsgenerator').projectDir = new File('./components/inspectit-ocelot-configdocsgenerator')
+include 'inspectit-ocelot-k8s-demo'
+
