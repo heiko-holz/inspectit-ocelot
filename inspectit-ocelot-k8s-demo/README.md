@@ -4,9 +4,12 @@ This demo deploys the [trading demo application](https://github.com/inspectIT/tr
 
 This tutorial based on the official [inspectIT Ocelot installation documentation](https://inspectit.github.io/inspectit-ocelot/docs/next/getting-started/installation#using-the-agent-with-kubernetes).
 
-Please note that we are showcasing to deploy the OpenTelemetry Collector Agent as a sidecar for illustrative purposes. The sidecar in this demo just receives, batches, and exports the traces. Imagine a use case in which a lot of traces received by the OpenTelemetry Collector should be filtered out, e.g., when a lot of readiness or liveliness probes are sent. In this scenario, it may be good to filter out these traces as close to the instrumented application as possible before sending the final traces over the network to the Collector deployment or to a Jaeger backend. Further, the OpenTelemetry Collector `deployment` also just received, batches, and exports the traces to Jaeger. Imagine a use case where we receive traces from different use cases. In this case, standardization of the traces using the OpenTelemetry Collector is a good way before sending the traces to the desired backend.
-
-However, the alternative to deploy the trading demo application without the sidecar and directly export to the OpenTelemetry Collector deployment may be more appropriate in the given context.
+<p align="center">
+<img src="./images/2022-03-inspectit-ocelot-k8s-demo-sidecar.png" width="50%" alt="inspectIT Ocelot k8s demo with OpenTelemetry Collector Agent as sidecar"/>
+</p>
+> Please **note** that we are showcasing to deploy the OpenTelemetry Collector Agent as a sidecar for illustrative purposes. The sidecar in this demo just receives, batches, and exports the traces. Imagine a use case in which a lot of traces received by the OpenTelemetry Collector should be filtered out, e.g., when a lot of readiness or liveliness probes are sent. In this scenario, it may be good to filter out these traces as close to the instrumented application as possible before sending the final traces over the network to the Collector deployment or to a Jaeger backend. Further, the OpenTelemetry Collector `deployment` also just received, batches, and exports the traces to Jaeger. Imagine a use case where we receive traces from different use cases. In this case, standardization of the traces using the OpenTelemetry Collector is a good way before sending the traces to the desired backend.
+>
+> However, the alternative to deploy the trading demo application without the sidecar and directly export to the OpenTelemetry Collector deployment  (or event to the Jaeger backend) may be more appropriate in the given context.
 
 ## 1. Requirements
 
@@ -568,8 +571,11 @@ spec:
 
 ### 2. Alternatively, deploy without sidecar
 
-Alternatively, if you don't want to inject the OpenTelemetry Collector Agent as a sidecar, you can deploy the Trading Demo Application with the file located at `./trading-demo/trading-demo.yaml`
+Alternatively, if you don't want to inject the OpenTelemetry Collector Agent as a sidecar, you can deploy the Trading Demo Application with the file located at `./trading-demo/trading-demo.yaml`.
 
+<p align="center">
+<img src="./images/2022-03-inspectit-ocelot-k8s-demo.png" width="50%" alt="inspectIT Ocelot k8s demo"/>
+</p>
 1. Deploy the trading demo application
 
    ```she
@@ -644,4 +650,4 @@ When you have executed some queries on the frontend, visit the Jaeger UI on [htt
   3. Visit the [Jaeger UI](http://localhost:16686) and verify that traces from the trading-demo-backend and trading-demo-frontend are received
 
      * for the request [http://localhost:8080/quote?coin=BTC&amount=1.25](http://localhost:8080/quote?coin=BTC&amount=1.25), the traces for the trading-demo-frontend should look similar to this:
-       ![Jaeger UI](C:\Users\HHO\dev\mds-ace\ace-monitoring-sample\k8s\jaeger-traces.png)
+       ![Jaeger UI](.\images\jaeger-traces.png)
