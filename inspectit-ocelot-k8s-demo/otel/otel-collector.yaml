@@ -31,6 +31,7 @@ spec:
       targetPort: 8889
     - name: jaeger-ace # Jaeger ACE receiver
       port: 6831
+      targetPort: 6831
       protocol: TCP
     - name: jaeger-inspectit # Jaeger InspectIT Ocelot receiver
       port: 14268

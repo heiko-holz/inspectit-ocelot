@@ -5,7 +5,7 @@ This demo deploys the [trading demo application](https://github.com/inspectIT/tr
 This tutorial based on the official [inspectIT Ocelot installation documentation](https://inspectit.github.io/inspectit-ocelot/docs/next/getting-started/installation#using-the-agent-with-kubernetes).
 
 <p align="center">
-<img src="./images/2022-03-inspectit-ocelot-k8s-demo-sidecar.png" width="50%" alt="inspectIT Ocelot k8s demo with OpenTelemetry Collector Agent as sidecar"/>
+<img src="./images/2022-03-inspectit-ocelot-k8s-demo-sidecar.svg" width="50%" alt="inspectIT Ocelot k8s demo with OpenTelemetry Collector Agent as sidecar"/>
 </p>
 > Please **note** that we are showcasing to deploy the OpenTelemetry Collector Agent as a sidecar for illustrative purposes. The sidecar in this demo just receives, batches, and exports the traces. Imagine a use case in which a lot of traces received by the OpenTelemetry Collector should be filtered out, e.g., when a lot of readiness or liveliness probes are sent. In this scenario, it may be good to filter out these traces as close to the instrumented application as possible before sending the final traces over the network to the Collector deployment or to a Jaeger backend. Further, the OpenTelemetry Collector `deployment` also just received, batches, and exports the traces to Jaeger. Imagine a use case where we receive traces from different use cases. In this case, standardization of the traces using the OpenTelemetry Collector is a good way before sending the traces to the desired backend.
 >
@@ -504,7 +504,7 @@ spec:
       ```
       
       * the result should look similar to this:
-          ```she
+          ```shell
           NAME                                         READY   STATUS    RESTARTS   AGE
           pod/trading-demo-backend-58fb4dddb5-xv7t5    1/1     Running   0          29s
           pod/trading-demo-frontend-567797856b-5zj72   1/1     Running   0          29s
@@ -520,8 +520,7 @@ spec:
           NAME                                               DESIRED   CURRENT   READY   AGE
           replicaset.apps/trading-demo-backend-58fb4dddb5    1         1         1       29s
           replicaset.apps/trading-demo-frontend-567797856b   1         1         1       29s
-          ```
-      
+          ```      
       
       * Verify that the OpenTelemetry Collector sidecar has been injected:
           ```shell
@@ -548,8 +547,7 @@ spec:
             # get the pods for the trading-demo-frontend
             kubectl get pods -l app=trading-demo-frontend -n trading-demo
             ```
-      
-      
+            
       * You can also `describe` the deployments to get more insights: 
           ```shell
           # describe the backend pod
@@ -565,16 +563,14 @@ spec:
 
    ```shell
    kubectl port-forward -n trading-demo service/trading-demo-frontend 8080
-   ```
-
-   
+   ```  
 
 ### 2. Alternatively, deploy without sidecar
 
 Alternatively, if you don't want to inject the OpenTelemetry Collector Agent as a sidecar, you can deploy the Trading Demo Application with the file located at `./trading-demo/trading-demo.yaml`.
 
 <p align="center">
-<img src="./images/2022-03-inspectit-ocelot-k8s-demo.png" width="50%" alt="inspectIT Ocelot k8s demo"/>
+<img src="./images/2022-03-inspectit-ocelot-k8s-demo.svg" width="50%" alt="inspectIT Ocelot k8s demo"/>
 </p>
 1. Deploy the trading demo application
 
