@@ -5,14 +5,6 @@ import com.linecorp.armeria.server.ServerBuilder;
 import com.linecorp.armeria.server.ServiceRequestContext;
 import com.linecorp.armeria.server.grpc.protocol.AbstractUnaryGrpcService;
 import com.linecorp.armeria.testing.junit5.server.ServerExtension;
-import io.opentelemetry.api.GlobalOpenTelemetry;
-import io.opentelemetry.api.common.AttributeKey;
-import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.metrics.LongCounter;
-import io.opentelemetry.api.metrics.Meter;
-import io.opentelemetry.api.trace.Span;
-import io.opentelemetry.api.trace.Tracer;
-import io.opentelemetry.context.Scope;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceRequest;
 import io.opentelemetry.proto.collector.logs.v1.ExportLogsServiceResponse;
 import io.opentelemetry.proto.collector.metrics.v1.ExportMetricsServiceRequest;
@@ -32,7 +24,6 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
-import rocks.inspectit.ocelot.bootstrap.Instances;
 import rocks.inspectit.ocelot.core.SpringTestBase;
 import rocks.inspectit.ocelot.core.config.InspectitEnvironment;
 
@@ -142,15 +133,6 @@ abstract class ExporterServiceIntegrationTestBase extends SpringTestBase {
     }
 
     /**
-     * The current {@link GlobalOpenTelemetry#getTracer(String)}
-     *
-     * @return The {@link Tracer} registered at {@link GlobalOpenTelemetry}
-     */
-    static Tracer getTracer() {
-        return GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME, INSTRUMENTATION_VERSION);
-    }
-
-    /**
      * Gets the desired endpoint of the {@link #collector} constructed as 'http://{@link GenericContainer#getHost() collector.getHost()}:{@link GenericContainer#getMappedPort(int) collector.getMappedPort(port)}/path'
      *
      * @param originalPort the port to get the actual mapped port for
@@ -160,59 +142,6 @@ abstract class ExporterServiceIntegrationTestBase extends SpringTestBase {
      */
     static String getEndpoint(Integer originalPort, String path) {
         return String.format("http://%s:%d/%s", collector.getHost(), collector.getMappedPort(originalPort), path.startsWith("/") ? path.substring(1) : path);
-    }
-
-    /**
-     * Creates a nested trace with parent and child span and flushes them.
-     *
-     * @param parentSpanName the name of the parent {@link Span}
-     * @param childSpanName  the name of the child {@link Span}
-     */
-    void makeSpansAndFlush(String parentSpanName, String childSpanName) {
-        // start span and nested span
-        Span parentSpan = getTracer().spanBuilder(parentSpanName).startSpan();
-        try (Scope scope = parentSpan.makeCurrent()) {
-            Span childSpan = getTracer().spanBuilder(childSpanName).startSpan();
-            try (Scope child = childSpan.makeCurrent()) {
-                // do sth
-            } finally {
-                childSpan.end();
-            }
-        } finally {
-            parentSpan.end();
-        }
-
-        // flush pending spans
-        Instances.openTelemetryController.flush();
-    }
-
-    /**
-     * Records some dummy metrics and flushes them.
-     */
-    void recordMetricsAndFlush() {
-        recordMetricsAndFlush(1, "my-key", "my-val");
-    }
-
-    /**
-     * Records a counter with the given value and tag
-     *
-     * @param value  the value to add to the counter
-     * @param tagKey the key of the tag
-     * @param tagVal the value of the tag
-     */
-    void recordMetricsAndFlush(int value, String tagKey, String tagVal) {
-        // get the meter and create a counter
-        Meter meter = GlobalOpenTelemetry.getMeterProvider()
-                .meterBuilder("rocks.inspectit.ocelot")
-                .setInstrumentationVersion("0.0.1")
-                .build();
-        LongCounter counter = meter.counterBuilder("my-counter").setDescription("My counter").setUnit("1").build();
-
-        // record counter
-        counter.add(value, Attributes.of(AttributeKey.stringKey(tagKey), tagVal));
-
-        Instances.openTelemetryController.flush();
-
     }
 
     /**

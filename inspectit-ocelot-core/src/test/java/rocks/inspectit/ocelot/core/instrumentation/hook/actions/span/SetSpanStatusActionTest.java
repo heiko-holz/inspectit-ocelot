@@ -1,55 +1,19 @@
 package rocks.inspectit.ocelot.core.instrumentation.hook.actions.span;
 
-import io.opencensus.common.Scope;
-import io.opencensus.trace.AttributeValue;
-import io.opencensus.trace.Span;
-import io.opencensus.trace.Status;
-import io.opencensus.trace.Tracing;
-import io.opentelemetry.context.Context;
-import org.junit.jupiter.api.BeforeEach;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.context.Scope;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.Mockito;
-import org.mockito.Spy;
-import org.mockito.junit.jupiter.MockitoExtension;
-import rocks.inspectit.ocelot.core.instrumentation.context.InspectitContextImpl;
-import rocks.inspectit.ocelot.core.instrumentation.hook.actions.IHookAction;
+
+import java.util.concurrent.TimeUnit;
 
 import static org.mockito.Mockito.*;
 
-@ExtendWith(MockitoExtension.class)
-public class SetSpanStatusActionTest {
-
-    @Mock
-    IHookAction.ExecutionContext executionContext;
-
-    @Mock
-    InspectitContextImpl ctx;
-
-    @Spy
-    // get the current span. This is needed when using the opencensus-shim as mocking the span collides with OTel's implementation (OpenTelemetryNoRecordEventsSpanImpl) of the Span.
-    // we could also alternatively try to mock SpanImpl such as OpenTelemetrySpanImpl, but I was not able to fix NullpointerExceptions in OpenTelemetrySpanBuilderImpl that way
-    Span span = Tracing.getTracer().getCurrentSpan();
-
-    @BeforeEach
-    void initMocks() {
-        doReturn(ctx).when(executionContext).getInspectitContext();
-    }
-
-    /**
-     * Verifies that only {@link io.opentelemetry.api.trace.Span#storeInContext(Context)} has been invoked on the given {@link Span}
-     *
-     * @param span
-     */
-    static void verifyNoMoreMeaningfulInteractions(Span span) {
-        // cast the OC span to an OTel span
-        io.opentelemetry.api.trace.Span otelSpan = (io.opentelemetry.api.trace.Span) span;
-        // verify that only storeInContext has been invoked
-        verify(otelSpan).storeInContext(Mockito.any());
-        verifyNoMoreInteractions(span);
-    }
+public class SetSpanStatusActionTest extends MockedSpanTestBase {
 
     @Nested
     class Execute {
@@ -59,11 +23,11 @@ public class SetSpanStatusActionTest {
             SetSpanStatusAction action = new SetSpanStatusAction((ctx) -> null);
             doReturn(true).when(ctx).hasEnteredSpan();
 
-            try (Scope spanScope = Tracing.getTracer().withSpan(span)) {
+            try (Scope spanScope = span.makeCurrent()) {
                 action.execute(executionContext);
             }
 
-            verifyNoMoreMeaningfulInteractions(span);
+            verifyNoMoreInteractions(span);
         }
 
         @Test
@@ -71,11 +35,11 @@ public class SetSpanStatusActionTest {
             SetSpanStatusAction action = new SetSpanStatusAction((ctx) -> false);
             doReturn(true).when(ctx).hasEnteredSpan();
 
-            try (Scope spanScope = Tracing.getTracer().withSpan(span)) {
+            try (Scope spanScope = span.makeCurrent()) {
                 action.execute(executionContext);
             }
 
-            verifyNoMoreMeaningfulInteractions(span);
+            verifyNoMoreInteractions(span);
         }
 
         @Test
@@ -83,14 +47,12 @@ public class SetSpanStatusActionTest {
             SetSpanStatusAction action = new SetSpanStatusAction((ctx) -> new Throwable());
             doReturn(true).when(ctx).hasEnteredSpan();
 
-            try (Scope spanScope = Tracing.getTracer().withSpan(span)) {
+            try (Scope spanScope = span.makeCurrent()) {
                 action.execute(executionContext);
             }
 
-            verify(span).setStatus(eq(Status.UNKNOWN));
-            verify(span).putAttribute(eq("error"), eq(AttributeValue.booleanAttributeValue(true)));
-            // storeInContext will also be called on the OTel span
-            verify((io.opentelemetry.api.trace.Span) (span)).storeInContext(Mockito.any());
+            verify(span).setStatus(StatusCode.UNSET);
+            verify(span).setAttribute(eq(AttributeKey.booleanKey("error")), eq(true));
 
             verifyNoMoreInteractions(span);
         }
@@ -100,12 +62,67 @@ public class SetSpanStatusActionTest {
             SetSpanStatusAction action = new SetSpanStatusAction((ctx) -> new Throwable());
             doReturn(false).when(ctx).hasEnteredSpan();
 
-            try (Scope spanScope = Tracing.getTracer().withSpan(span)) {
+            try (Scope spanScope = span.makeCurrent()) {
                 action.execute(executionContext);
             }
 
-            verifyNoMoreMeaningfulInteractions(span);
+            verifyNoMoreInteractions(span);
         }
 
+    }
+
+    static class MockableSpan implements Span {
+
+        Span span;
+
+        @Override
+        public <T> Span setAttribute(AttributeKey<T> key, T value) {
+            return span.setAttribute(key, value);
+        }
+
+        @Override
+        public Span addEvent(String name, Attributes attributes) {
+            return span.addEvent(name, attributes);
+        }
+
+        @Override
+        public Span addEvent(String name, Attributes attributes, long timestamp, TimeUnit unit) {
+            return span.addEvent(name, attributes, timestamp, unit);
+        }
+
+        @Override
+        public Span setStatus(StatusCode statusCode, String description) {
+            return span.setStatus(statusCode, description);
+        }
+
+        @Override
+        public Span recordException(Throwable exception, Attributes additionalAttributes) {
+            return span.recordException(exception, additionalAttributes);
+        }
+
+        @Override
+        public Span updateName(String name) {
+            return span.updateName(name);
+        }
+
+        @Override
+        public void end() {
+            span.end();
+        }
+
+        @Override
+        public void end(long timestamp, TimeUnit unit) {
+            span.end(timestamp, unit);
+        }
+
+        @Override
+        public SpanContext getSpanContext() {
+            return span.getSpanContext();
+        }
+
+        @Override
+        public boolean isRecording() {
+            return span.isRecording();
+        }
     }
 }

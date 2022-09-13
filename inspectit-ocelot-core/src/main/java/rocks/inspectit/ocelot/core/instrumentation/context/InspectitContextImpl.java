@@ -1,20 +1,19 @@
 package rocks.inspectit.ocelot.core.instrumentation.context;
 
-import io.opencensus.common.Function;
-import io.opencensus.common.Scope;
-import io.opencensus.tags.*;
-import io.opencensus.trace.ContextHandle;
-import io.opencensus.trace.Span;
-import io.opencensus.trace.SpanContext;
-import io.opencensus.trace.Tracing;
+import io.opentelemetry.api.baggage.Baggage;
+import io.opentelemetry.api.baggage.BaggageBuilder;
+import io.opentelemetry.api.baggage.BaggageEntryMetadata;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.context.ContextKey;
+import io.opentelemetry.context.Scope;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import rocks.inspectit.ocelot.bootstrap.context.InternalInspectitContext;
 import rocks.inspectit.ocelot.config.model.instrumentation.data.PropagationMode;
 import rocks.inspectit.ocelot.core.instrumentation.config.model.propagation.PropagationMetaData;
-import rocks.inspectit.ocelot.core.tags.TagUtils;
+import rocks.inspectit.ocelot.core.tags.AttributesUtils;
 
 import java.util.*;
 import java.util.stream.Stream;
@@ -131,7 +130,7 @@ public class InspectitContextImpl implements InternalInspectitContext {
      * <p>
      * The tag context is guaranteed to contain the same tags as returned by {@link #getPostEntryPhaseTags()}
      */
-    private TagContext activePhaseDownPropagationTagContext;
+    private Baggage activePhaseDownPropagationTagContext;
 
     /**
      * Marker variable to indicate that {@link #activePhaseDownPropagationTagContext} is stale.
@@ -279,17 +278,12 @@ public class InspectitContextImpl implements InternalInspectitContext {
         overriddenGrpcContext = ContextUtil.currentGrpc().withValue(INSPECTIT_KEY_GRPC, this).attach();
 
         if (interactWithApplicationTagContexts) {
-            Tagger tagger = Tags.getTagger();
+
             //check if we can reuse the parent context
             if (anyDownPropagatedDataOverwritten || (parent != null && parent.isActivePhaseDownPropagationTagContextStale)) {
-                openedDownPropagationScope = tagger.withTagContext(new TagContext() {
-                    @Override
-                    protected Iterator<Tag> getIterator() {
-                        return getPostEntryPhaseTags();
-                    }
-                });
+                openedDownPropagationScope = getPostEntryPhaseTags().makeCurrent();
             }
-            activePhaseDownPropagationTagContext = tagger.getCurrentTagContext();
+            activePhaseDownPropagationTagContext = Baggage.current();
         }
     }
 
@@ -338,10 +332,9 @@ public class InspectitContextImpl implements InternalInspectitContext {
      * // TODO Remove? This becomes obsolete now
      */
     public Scope enterFullTagScope() {
-        TagContextBuilder builder = Tags.getTagger().emptyBuilder();
-        dataTagsStream().forEach(e -> builder.putLocal(TagKey.create(e.getKey()), TagUtils.createTagValue(e.getKey(), e.getValue()
-                .toString())));
-        return builder.buildScoped();
+        BaggageBuilder builder = Baggage.builder();
+        dataTagsStream().forEach(e -> builder.put(e.getKey(), e.getValue().toString()));
+        return builder.build().makeCurrent();
     }
 
     private Stream<Map.Entry<String, Object>> dataTagsStream() {
@@ -383,7 +376,7 @@ public class InspectitContextImpl implements InternalInspectitContext {
     /**
      * Closes this context.
      * If any {@link TagContext} was opened during {@link #makeActive()}, this context is also closed.
-     * In addition up-propagation is performed if this context is not asynchronous.
+     * In addition, up-propagation is performed if this context is not asynchronous.
      */
     @Override
     public void close() {
@@ -397,7 +390,7 @@ public class InspectitContextImpl implements InternalInspectitContext {
         }
 
         // detach the overridden GRPC context
-        if (null != overriddenGrpcContext){
+        if (null != overriddenGrpcContext) {
             ContextUtil.currentGrpc().detach(overriddenGrpcContext);
         }
 
@@ -440,7 +433,7 @@ public class InspectitContextImpl implements InternalInspectitContext {
 
     @Override
     public Map<String, String> getDownPropagationHeaders() {
-        SpanContext spanContext = Tracing.getTracer().getCurrentSpan().getContext();
+        SpanContext spanContext = Span.current().getSpanContext();
         if (!spanContext.isValid()) {
             Object remoteParent = getData(REMOTE_PARENT_SPAN_CONTEXT_KEY);
             if (remoteParent instanceof SpanContext) {
@@ -481,24 +474,23 @@ public class InspectitContextImpl implements InternalInspectitContext {
      * have changed in comparison to the values published by the parent context.
      */
     private void readOverridesFromCurrentTagContext() {
-        TagContext currentTags = Tags.getTagger().getCurrentTagContext();
-        if (currentTags != null) {
+        Baggage currentBaggage = Baggage.current();
+        if (currentBaggage != null) {
             PropagationMetaData.Builder alteredPropagation = null;
             if (parent == null) {
                 //we are the first inspectit context, therefore we inherit all values
-                for (Iterator<Tag> it = InternalUtils.getTags(currentTags); it.hasNext(); ) {
-                    Tag tag = it.next();
-                    setData(tag.getKey().getName(), tag.getValue().asString());
-                    alteredPropagation = configureTagPropagation(tag.getKey().getName(), alteredPropagation);
+
+                for (String key : currentBaggage.asMap().keySet()) {
+                    setData(key, currentBaggage.getEntryValue(key));
+                    alteredPropagation = configureTagPropagation(key, alteredPropagation);
                 }
+
             } else {
                 // a new context was opened between our parent and ourselves
                 // we look for all values which have changed and inherit them
-                if (currentTags != parent.activePhaseDownPropagationTagContext) {
-                    for (Iterator<Tag> it = InternalUtils.getTags(currentTags); it.hasNext(); ) {
-                        Tag tag = it.next();
-                        String tagKey = tag.getKey().getName();
-                        String tagValue = tag.getValue().asString();
+                if (currentBaggage != parent.activePhaseDownPropagationTagContext) {
+                    for (String tagKey : currentBaggage.asMap().keySet()) {
+                        String tagValue = currentBaggage.getEntryValue(tagKey);
                         Object parentValueForTag = parent.postEntryPhaseDownPropagatedData.get(tagKey);
                         //only inherit changed values
                         if (parentValueForTag == null || !parentValueForTag.toString().equals(tagValue)) {
@@ -518,7 +510,7 @@ public class InspectitContextImpl implements InternalInspectitContext {
      * Checks if the given key is already configured in {@link #propagation} for down-propagation and as a tag.
      * If it is the case, the passed in builder is returned without changes.
      * <p>
-     * Otherwise the key is configured in the given builder to be down-propagated JVM-locally and to be a tag.
+     * Otherwise, the key is configured in the given builder to be down-propagated JVM-locally and to be a tag.
      *
      * @param tagKey          the key of the found tag
      * @param existingBuilder an existing builder to which the settings shall be added. If it is null, a builder is created using copy() on {@link #propagation}.
@@ -574,14 +566,16 @@ public class InspectitContextImpl implements InternalInspectitContext {
         return result;
     }
 
-    private Iterator<Tag> getPostEntryPhaseTags() {
-        return postEntryPhaseDownPropagatedData.entrySet()
+    private Baggage getPostEntryPhaseTags() {
+
+        BaggageBuilder baggageBuilder = Baggage.builder();
+        postEntryPhaseDownPropagatedData.entrySet()
                 .stream()
                 .filter(e -> propagation.isTag(e.getKey()))
                 .filter(e -> ALLOWED_TAG_TYPES.contains(e.getValue().getClass()))
-                .map(e -> Tag.create(TagKey.create(e.getKey()), TagUtils.createTagValue(e.getKey(), e.getValue()
-                        .toString()), TagMetadata.create(TagMetadata.TagTtl.UNLIMITED_PROPAGATION)))
-                .iterator();
+                .forEach(e -> baggageBuilder.put(e.getKey(), AttributesUtils.createAttributeValue(e.getKey(), e.getValue()
+                        .toString()), BaggageEntryMetadata.create("unlimited")));
+        return baggageBuilder.build();
     }
 
 }

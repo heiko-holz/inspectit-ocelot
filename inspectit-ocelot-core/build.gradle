@@ -37,11 +37,8 @@ dependencies {
             'io.opentelemetry:opentelemetry-api',
             "io.opentelemetry:opentelemetry-sdk",
             "io.opentelemetry:opentelemetry-sdk-metrics",
-            "io.opentelemetry:opentelemetry-semconv",
-            // OC-OTel bridge
-            "io.opentelemetry:opentelemetry-opencensus-shim",
-
-
+            "io.opentelemetry:opentelemetry-sdk-trace",
+            "io.opentelemetry:opentelemetry-semconv"
     )
     annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
 
@@ -74,9 +71,6 @@ dependencies {
             // Metrics exporters
             "io.prometheus:simpleclient_httpserver:${prometheusClientVersion}",
 
-            // we still need the OpenCensus SDK for the metric exporters to work, as the shim only includes opencensus-impl-core
-            "io.opencensus:opencensus-impl:${openCensusVersion}",
-
             // OpenTelemetry exporters
             platform("io.opentelemetry:opentelemetry-bom:${openTelemetryVersion}"),
             "io.opentelemetry:opentelemetry-exporter-logging",
@@ -84,6 +78,8 @@ dependencies {
             "io.opentelemetry:opentelemetry-exporter-jaeger-thrift",
             "io.opentelemetry:opentelemetry-exporter-zipkin",
             "io.opentelemetry:opentelemetry-exporter-otlp",
+            // propagators
+            "io.opentelemetry:opentelemetry-extension-trace-propagators",
 
             platform("io.opentelemetry:opentelemetry-bom-alpha:${openTelemetryAlphaVersion}"),
             "io.opentelemetry:opentelemetry-exporter-prometheus",
@@ -95,7 +91,12 @@ dependencies {
             "rocks.inspectit:opencensus-influxdb-exporter:1.2",
 
             // bytecode manipulation
-            "net.bytebuddy:byte-buddy:1.11.15"
+            "net.bytebuddy:byte-buddy:1.11.15",
+
+            // for the @VisibleForTesting annotation
+            'com.google.guava:guava:31.0.1-jre',
+            // for the grpc context used by InspectitContext (was previously shipped with OpenCensus)
+            "io.grpc:grpc-context:${grpcVersion}"
     )
 
     testImplementation(
@@ -104,7 +105,6 @@ dependencies {
             platform("io.opentelemetry:opentelemetry-bom-alpha:${openTelemetryAlphaVersion}"),
             "io.opentelemetry:opentelemetry-sdk",
             "io.opentelemetry:opentelemetry-sdk-metrics",
-            "io.opentelemetry:opentelemetry-opencensus-shim",
             "io.opentelemetry:opentelemetry-semconv",
             "io.opentelemetry:opentelemetry-sdk-testing",
             "io.opentelemetry:opentelemetry-proto:1.7.1-alpha",

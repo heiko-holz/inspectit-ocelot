@@ -32,9 +32,7 @@ dependencies {
     )
 
     opentelemetry(
-        "io.opentelemetry:opentelemetry-sdk:${openTelemetryVersion}",
-        "io.opentelemetry:opentelemetry-opencensus-shim:${openTelemetryAlphaVersion}",
-        "io.opencensus:opencensus-impl:${openCensusVersion}",
+        "io.opentelemetry:opentelemetry-sdk:${openTelemetryVersion}"
     )
     annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
     testImplementation (
@@ -118,15 +116,11 @@ dependencies {
             platform("io.opentelemetry:opentelemetry-bom:${openTelemetryVersion}"),
             platform("io.opentelemetry:opentelemetry-bom-alpha:${openTelemetryAlphaVersion}"),
             "io.opentelemetry:opentelemetry-sdk",
-            "io.opentelemetry:opentelemetry-opencensus-shim",
-            "io.opencensus:opencensus-impl:${openCensusVersion}",
 
             project(':inspectit-ocelot-bootstrap')
     )
 
     systemTestImplementation(
-            "io.opencensus:opencensus-testing:${openCensusVersion}",
-            "io.opencensus:opencensus-api:${openCensusVersion}",
 
             // for InMemorySpanExporter
             platform("io.opentelemetry:opentelemetry-bom:${openTelemetryVersion}"),

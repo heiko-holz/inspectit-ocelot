@@ -1,13 +1,10 @@
 package rocks.inspectit.ocelot.core.metrics.system;
 
-import io.opencensus.tags.TagContext;
-import io.opencensus.tags.TagKey;
-import io.opencensus.tags.Tagger;
+import io.opentelemetry.api.baggage.Baggage;
 import lombok.val;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import rocks.inspectit.ocelot.config.model.metrics.MetricsSettings;
-import rocks.inspectit.ocelot.core.tags.TagUtils;
+import rocks.inspectit.ocelot.core.tags.AttributesUtils;
 
 import java.lang.management.BufferPoolMXBean;
 import java.lang.management.ManagementFactory;
@@ -43,12 +40,9 @@ public class MemoryMetricsRecorder extends AbstractPollingMetricsRecorder {
 
     private static final String BUFFER_CAPACITY_METRIC_FULL_NAME = "jvm/buffer/total/capacity";
 
-    private TagKey idTagKey = TagKey.create("id");
+    private String idTagKey = "id";
 
-    private TagKey areaTagKey = TagKey.create("area");
-
-    @Autowired
-    private Tagger tagger;
+    private String areaTagKey = "area";
 
     public MemoryMetricsRecorder() {
         super("metrics.memory");
@@ -78,9 +72,10 @@ public class MemoryMetricsRecorder extends AbstractPollingMetricsRecorder {
         if (usedEnabled || committedEnabled || maxEnabled) {
             for (MemoryPoolMXBean memoryPoolBean : ManagementFactory.getPlatformMXBeans(MemoryPoolMXBean.class)) {
                 String area = MemoryType.HEAP.equals(memoryPoolBean.getType()) ? "heap" : "nonheap";
-                TagContext tags = tagger.currentBuilder()
-                        .putLocal(idTagKey, TagUtils.createTagValue(idTagKey.getName(), memoryPoolBean.getName()))
-                        .putLocal(areaTagKey, TagUtils.createTagValue(areaTagKey.getName(), area))
+                Baggage tags = Baggage.current()
+                        .toBuilder()
+                        .put(idTagKey, AttributesUtils.createAttributeValue(idTagKey, memoryPoolBean.getName()))
+                        .put(areaTagKey, AttributesUtils.createAttributeValue(areaTagKey, area))
                         .build();
 
                 if (usedEnabled) {
@@ -109,8 +104,9 @@ public class MemoryMetricsRecorder extends AbstractPollingMetricsRecorder {
         boolean bufferCapacityEnabled = enabledMetrics.getOrDefault(BUFFER_CAPACITY_METRIC_NAME, false);
         if (bufferCountEnabled || bufferUsedEnabled || bufferCapacityEnabled) {
             for (BufferPoolMXBean bufferPoolBean : ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class)) {
-                TagContext tags = tagger.currentBuilder()
-                        .putLocal(idTagKey, TagUtils.createTagValue(idTagKey.getName(), bufferPoolBean.getName()))
+                Baggage tags = Baggage.current()
+                        .toBuilder()
+                        .put(idTagKey, AttributesUtils.createAttributeValue(idTagKey, bufferPoolBean.getName()))
                         .build();
 
                 if (bufferCountEnabled) {

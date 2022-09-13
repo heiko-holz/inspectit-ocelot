@@ -1,6 +1,6 @@
 package rocks.inspectit.ocelot.core;
 
-import io.opencensus.tags.Tags;
+import io.opentelemetry.api.common.Attributes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationListener;
@@ -105,7 +105,8 @@ public class AgentImpl implements IAgent {
     }
 
     private void logOpenTelemetryClassLoader() {
-        if (Tags.class.getClassLoader() == AgentImpl.class.getClassLoader()) {
+
+        if (Attributes.class.getClassLoader() == AgentImpl.class.getClassLoader()) {
             LOGGER.info("OpenTelemetry was loaded in inspectIT classloader");
         } else {
             LOGGER.info("OpenTelemetry was loaded in bootstrap classloader");

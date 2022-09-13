@@ -1,7 +1,7 @@
 package rocks.inspectit.ocelot.instrumentation.tracing;
 
+import io.opentelemetry.sdk.trace.data.SpanData;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import rocks.inspectit.ocelot.utils.TestUtils;
 
@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@Disabled // TODO: fix StackTraceSampling and AutoTracing with OTEL
+// TODO: fix StackTraceSampling and AutoTracing with OTEL
 public class AutoTracingTest extends TraceTestBase {
 
     @BeforeAll
@@ -19,10 +19,8 @@ public class AutoTracingTest extends TraceTestBase {
         TestUtils.waitForClassInstrumentation(AutoTracingTest.class, true, 30, TimeUnit.SECONDS);
     }
 
-    io.opentelemetry.sdk.trace.data.SpanData getSpanWithName(Collection<? extends io.opentelemetry.sdk.trace.data.SpanData> spans, String name) {
-        Optional<? extends io.opentelemetry.sdk.trace.data.SpanData> spanOptional = spans.stream()
-                .filter(s -> s.getName().equals(name))
-                .findFirst();
+    SpanData getSpanWithName(Collection<? extends SpanData> spans, String name) {
+        Optional<? extends SpanData> spanOptional = spans.stream().filter(s -> s.getName().equals(name)).findFirst();
         assertThat(spanOptional).isNotEmpty();
         return spanOptional.get();
     }
@@ -33,9 +31,9 @@ public class AutoTracingTest extends TraceTestBase {
 
         assertTraceExported((spans) -> {
 
-            io.opentelemetry.sdk.trace.data.SpanData root = getSpanWithName(spans, "AutoTracingTest.instrumentMe");
-            io.opentelemetry.sdk.trace.data.SpanData activeWait = getSpanWithName(spans, "*AutoTracingTest.activeWait");
-            io.opentelemetry.sdk.trace.data.SpanData passiveWait = getSpanWithName(spans, "*Thread.sleep");
+            SpanData root = getSpanWithName(spans, "AutoTracingTest.instrumentMe");
+            SpanData activeWait = getSpanWithName(spans, "*AutoTracingTest.activeWait");
+            SpanData passiveWait = getSpanWithName(spans, "*Thread.sleep");
             assertThat(activeWait.getParentSpanId()).isEqualTo(root.getSpanId());
             assertThat(passiveWait.getParentSpanId()).isEqualTo(root.getSpanId());
 

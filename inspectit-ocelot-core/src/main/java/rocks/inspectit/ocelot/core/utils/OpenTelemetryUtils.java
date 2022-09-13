@@ -2,8 +2,13 @@ package rocks.inspectit.ocelot.core.utils;
 
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.OpenTelemetry;
+import io.opentelemetry.api.metrics.Meter;
+import io.opentelemetry.api.metrics.ObservableMeasurement;
+import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.sdk.common.CompletableResultCode;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
+import io.opentelemetry.sdk.metrics.internal.descriptor.InstrumentDescriptor;
+import io.opentelemetry.sdk.metrics.internal.state.SdkObservableMeasurement;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import lombok.extern.slf4j.Slf4j;
 import rocks.inspectit.ocelot.bootstrap.Instances;
@@ -17,6 +22,22 @@ import java.util.concurrent.TimeUnit;
  */
 @Slf4j
 public class OpenTelemetryUtils {
+
+    // TODO: move to another class (e.g., SdkSpanUtils), single-responsibility!
+
+    /**
+     * The {@link InstrumentDescriptor #instrumentDescriptor} member of {@link SdkObservableMeasurement}
+     */
+    private static final Field SDKOBSERVABLEMEASUREMENT_INSTRUMENTDESCRIPTOR;
+
+    static {
+        try {
+            SDKOBSERVABLEMEASUREMENT_INSTRUMENTDESCRIPTOR = SdkObservableMeasurement.class.getDeclaredField("instrumentDescriptor");
+            SDKOBSERVABLEMEASUREMENT_INSTRUMENTDESCRIPTOR.setAccessible(true);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     /**
      * {@link SdkMeterProvider#close() closes} the given {@link SdkMeterProvider} and blocks waiting for it to complete.
@@ -117,7 +138,39 @@ public class OpenTelemetryUtils {
     /**
      * {@link Instances#openTelemetryController#flush() flushes} all pending spans and metrics waits for it to complete.
      */
-    public static void flush(){
+    public static void flush() {
         Instances.openTelemetryController.flush();
     }
+
+    /**
+     * Gets the current {@link Tracer} registered at {@link GlobalOpenTelemetry#getTracer(String, String)} under the instrumentationScopeName 'rocks.inspectit.ocelot'
+     *
+     * @return
+     */
+    public static Tracer getTracer() {
+        return getGlobalOpenTelemetry().getTracer("rocks.inspectit.ocelot", "0.0.1");
+    }
+
+    public static Meter getMeter() {
+        return getGlobalOpenTelemetry().getMeter("rocks.inspectit.ocelot");
+    }
+
+    /**
+     * Gets the {@link InstrumentDescriptor} for a given {@link SdkObservableMeasurement}
+     *
+     * @param observableMeasurement
+     *
+     * @return
+     */
+    public static InstrumentDescriptor getInstrumentDescriptor(ObservableMeasurement observableMeasurement) {
+        if (!(observableMeasurement instanceof SdkObservableMeasurement)) {
+            throw new IllegalArgumentException(observableMeasurement.getClass() + " is not of type " + SdkObservableMeasurement.class.getName());
+        }
+        try {
+            return (InstrumentDescriptor) SDKOBSERVABLEMEASUREMENT_INSTRUMENTDESCRIPTOR.get(observableMeasurement);
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException("Could not extract InstrumentDescriptor", e);
+        }
+    }
+
 }

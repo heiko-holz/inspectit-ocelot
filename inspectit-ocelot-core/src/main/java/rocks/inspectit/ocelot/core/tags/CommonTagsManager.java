@@ -1,10 +1,9 @@
 package rocks.inspectit.ocelot.core.tags;
 
-import io.opencensus.common.Scope;
-import io.opencensus.tags.TagContext;
-import io.opencensus.tags.TagContextBuilder;
-import io.opencensus.tags.TagKey;
-import io.opencensus.tags.Tags;
+import io.opentelemetry.api.baggage.Baggage;
+import io.opentelemetry.api.baggage.BaggageBuilder;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.context.Scope;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,19 +51,19 @@ public class CommonTagsManager {
      * OpenCensus tag context representing common tag context.
      */
     @Getter
-    private TagContext commonTagContext = Tags.getTagger().emptyBuilder().build();
+    private Baggage commonBaggage = Baggage.empty();
 
     /**
      * List of common tag keys that can be used when creating the views.
      */
-    private List<TagKey> commonTagKeys = Collections.emptyList();
+    private List<String> commonTagKeys = Collections.emptyList();
 
     /**
      * Returns common tags keys that all view should register.
      *
      * @return Returns common tags keys that all view should register.
      */
-    public List<TagKey> getCommonTagKeys() {
+    public List<String> getCommonTagKeys() {
         return Collections.unmodifiableList(commonTagKeys);
     }
 
@@ -79,7 +78,7 @@ public class CommonTagsManager {
      * @return Returns newly created scope with default tag context.
      */
     public Scope withCommonTagScope() {
-        return Tags.getTagger().withTagContext(commonTagContext);
+        return commonBaggage.makeCurrent();
     }
 
     /**
@@ -99,14 +98,13 @@ public class CommonTagsManager {
             return withCommonTagScope();
         }
 
-        TagContextBuilder tagContextBuilder = Tags.getTagger().currentBuilder();
+        BaggageBuilder baggageBuilder = Baggage.current().toBuilder();
         HashMap<String, String> tags = new HashMap<>(commonTagValueMap);
         tags.putAll(customTagMap);
         tags.entrySet()
                 .stream()
-                .forEach(entry -> tagContextBuilder.putLocal(TagKey.create(entry.getKey()), TagUtils.createTagValue(entry
-                        .getKey(), entry.getValue())));
-        return tagContextBuilder.buildScoped();
+                .forEach(entry -> baggageBuilder.put(entry.getKey(), AttributesUtils.createAttributeValue(entry.getKey(), entry.getValue())));
+        return baggageBuilder.build().makeCurrent();
     }
 
     /**
@@ -124,16 +122,24 @@ public class CommonTagsManager {
         providers.forEach(provider -> provider.getTags(configuration).forEach(newCommonTagValueMap::putIfAbsent));
 
         // then create key/value tags pairs for resolved map
-        List<TagKey> newCommonTagKeys = new ArrayList<>();
-        TagContextBuilder tagContextBuilder = Tags.getTagger().emptyBuilder();
+        List<String> newCommonTagKeys = new ArrayList<>();
+        BaggageBuilder baggageBuilder = Baggage.builder();
         newCommonTagValueMap.forEach((k, v) -> {
-            TagKey key = TagKey.create(k);
-            newCommonTagKeys.add(key);
-            tagContextBuilder.putLocal(key, TagUtils.createTagValue(key.getName(), v));
+            newCommonTagKeys.add(k);
+            baggageBuilder.put(k, AttributesUtils.createAttributeValue(k, v));
         });
         commonTagKeys = newCommonTagKeys;
         commonTagValueMap = newCommonTagValueMap;
-        commonTagContext = tagContextBuilder.build();
+        commonBaggage = baggageBuilder.build();
+    }
+
+    /**
+     * Converts the {@link #commonBaggage} to {@link Attributes}
+     *
+     * @return
+     */
+    public Attributes getCommonAttributes() {
+        return AttributesUtils.fromBaggage(commonBaggage);
     }
 
 }

@@ -1,12 +1,12 @@
 package rocks.inspectit.ocelot.core.metrics.percentiles;
 
 import com.google.common.annotations.VisibleForTesting;
-import io.opencensus.common.Timestamp;
-import io.opencensus.tags.TagContext;
+import io.opentelemetry.api.baggage.Baggage;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Consumer thread for asynchronously processing measurement observations.
@@ -36,7 +36,7 @@ class AsyncMetricRecorder {
         worker.start();
     }
 
-    void record(String measureName, double value, Timestamp time, TagContext tags) {
+    void record(String measureName, double value, long time, Baggage tags) {
         boolean success = recordsQueue.offer(new MetricRecord(value, measureName, time, tags));
         if (!success && !overflowLogged) {
             overflowLogged = true;
@@ -68,7 +68,10 @@ class AsyncMetricRecorder {
 
     public interface MetricConsumer {
 
-        void record(String measure, double value, Timestamp time, TagContext tags);
+        // void record(String measure, double value, long time, TimeUnit timeUnit, Baggage tags);
+
+        void record(String measure, double value, long time, Baggage tags);
+
     }
 
     @Value
@@ -78,9 +81,11 @@ class AsyncMetricRecorder {
 
         String measure;
 
-        Timestamp time;
+        long time;
 
-        TagContext tagContext;
+        TimeUnit timeUnit = TimeUnit.MILLISECONDS;
+
+        Baggage tagContext;
 
     }
 

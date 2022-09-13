@@ -1,26 +1,36 @@
 package rocks.inspectit.ocelot.core.metrics.percentiles;
 
 import com.google.common.annotations.VisibleForTesting;
-import io.opencensus.common.Timestamp;
-import io.opencensus.metrics.LabelKey;
-import io.opencensus.metrics.LabelValue;
-import io.opencensus.metrics.export.*;
-import io.opencensus.tags.InternalUtils;
-import io.opencensus.tags.Tag;
-import io.opencensus.tags.TagContext;
+import io.opentelemetry.api.baggage.Baggage;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.common.AttributesBuilder;
+import io.opentelemetry.sdk.common.InstrumentationScopeInfo;
+import io.opentelemetry.sdk.metrics.InstrumentType;
+import io.opentelemetry.sdk.metrics.InstrumentValueType;
+import io.opentelemetry.sdk.metrics.data.GaugeData;
+import io.opentelemetry.sdk.metrics.data.MetricData;
+import io.opentelemetry.sdk.metrics.data.PointData;
+import io.opentelemetry.sdk.metrics.internal.data.ImmutableDoublePointData;
+import io.opentelemetry.sdk.metrics.internal.data.ImmutableGaugeData;
+import io.opentelemetry.sdk.metrics.internal.data.ImmutableMetricData;
+import io.opentelemetry.sdk.metrics.internal.descriptor.InstrumentDescriptor;
+import io.opentelemetry.sdk.resources.Resource;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.math3.stat.descriptive.rank.Percentile;
+import org.springframework.beans.factory.annotation.Autowired;
+import rocks.inspectit.ocelot.core.opentelemetry.OpenTelemetryControllerImpl;
 
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 
 /**
  * Holds the data for a given measurement splitted by a provided set of tags over a given time window.
@@ -54,17 +64,17 @@ public class PercentileView {
     /**
      * The descriptor of the metric for this view.
      */
-    private MetricDescriptor percentileMetricDescriptor;
+    private InstrumentDescriptor percentileMetricDescriptor;
 
     /**
      * If not null, the minimum value will be exposed as this gauge.
      */
-    private MetricDescriptor minMetricDescriptor;
+    private InstrumentDescriptor minMetricDescriptor;
 
     /**
      * If not null, the maximum value will be exposed as this gauge.
      */
-    private MetricDescriptor maxMetricDescriptor;
+    private InstrumentDescriptor maxMetricDescriptor;
 
     /**
      * The percentiles to compute in the range (0,1)
@@ -131,6 +141,9 @@ public class PercentileView {
      */
     private AtomicLong lastCleanupTimeMs;
 
+    @Autowired
+    OpenTelemetryControllerImpl openTelemetryController;
+
     /**
      * Constructor.
      *
@@ -156,27 +169,21 @@ public class PercentileView {
         this.bufferLimit = bufferLimit;
         numberOfPoints = new AtomicInteger(0);
         lastCleanupTimeMs = new AtomicLong(0);
-
-        List<LabelKey> percentileLabelKeys = getLabelKeysInOrderForPercentiles();
-        List<LabelKey> minMaxLabelKeys = getLabelKeysInOrderForMinMax();
         if (!percentiles.isEmpty()) {
-            percentileMetricDescriptor = MetricDescriptor.create(viewName, description, unit, MetricDescriptor.Type.GAUGE_DOUBLE, percentileLabelKeys);
+            percentileMetricDescriptor = InstrumentDescriptor.create(viewName, description, unit, InstrumentType.OBSERVABLE_GAUGE, InstrumentValueType.DOUBLE);
         }
         if (includeMin) {
-            minMetricDescriptor = MetricDescriptor.create(viewName + MIN_METRIC_SUFFIX, description, unit, MetricDescriptor.Type.GAUGE_DOUBLE, minMaxLabelKeys);
+            minMetricDescriptor = InstrumentDescriptor.create(viewName + MIN_METRIC_SUFFIX, description, unit, InstrumentType.OBSERVABLE_GAUGE, InstrumentValueType.DOUBLE);
         }
         if (includeMax) {
-            maxMetricDescriptor = MetricDescriptor.create(viewName + MAX_METRIC_SUFFIX, description, unit, MetricDescriptor.Type.GAUGE_DOUBLE, minMaxLabelKeys);
+            maxMetricDescriptor = InstrumentDescriptor.create(viewName + MAX_METRIC_SUFFIX, description, unit, InstrumentType.OBSERVABLE_GAUGE, InstrumentValueType.DOUBLE);
         }
     }
 
-    private void validateConfiguration(boolean includeMin, boolean includeMax, Set<Double> percentiles, long timeWindowMillis,
-                                       String baseViewName, String unit, String description, int bufferLimit) {
-        percentiles.stream()
-                .filter(p -> p <= 0.0 || p >= 1.0)
-                .forEach(p -> {
-                    throw new IllegalArgumentException("Percentiles must be in range (0,1)");
-                });
+    private void validateConfiguration(boolean includeMin, boolean includeMax, Set<Double> percentiles, long timeWindowMillis, String baseViewName, String unit, String description, int bufferLimit) {
+        percentiles.stream().filter(p -> p <= 0.0 || p >= 1.0).forEach(p -> {
+            throw new IllegalArgumentException("Percentiles must be in range (0,1)");
+        });
         if (StringUtils.isBlank(baseViewName)) {
             throw new IllegalArgumentException("View name must not be blank!");
         }
@@ -215,7 +222,7 @@ public class PercentileView {
      *
      * @return true, if the point could be added, false otherwise.
      */
-    boolean insertValue(double value, Timestamp time, TagContext tagContext) {
+    boolean insertValue(double value, long time, Baggage tagContext) {
         removeStalePointsIfTimeThresholdExceeded(time);
         List<String> tags = getTagsList(tagContext);
         WindowedDoubleQueue queue = seriesValues.computeIfAbsent(tags, (key) -> new WindowedDoubleQueue(timeWindowMillis));
@@ -229,9 +236,7 @@ public class PercentileView {
             } else {
                 if (!overflowWarningPrinted) {
                     overflowWarningPrinted = true;
-                    log.warn("Dropping points for Percentiles-View '{}' because the buffer limit has been reached!" +
-                            " Quantiles/Min/Max will be meaningless." +
-                            " This warning will not be shown for future drops!", viewName);
+                    log.warn("Dropping points for Percentiles-View '{}' because the buffer limit has been reached!" + " Quantiles/Min/Max will be meaningless." + " This warning will not be shown for future drops!", viewName);
                 }
                 return false;
             }
@@ -264,7 +269,7 @@ public class PercentileView {
      *
      * @param time the current time
      */
-    private void removeStalePoints(Timestamp time) {
+    private void removeStalePoints(long time) {
         long timeMillis = getInMillis(time);
         lastCleanupTimeMs.set(timeMillis);
         for (WindowedDoubleQueue queue : seriesValues.values()) {
@@ -282,7 +287,7 @@ public class PercentileView {
      *
      * @param time the current time
      */
-    private void removeStalePointsIfTimeThresholdExceeded(Timestamp time) {
+    private void removeStalePointsIfTimeThresholdExceeded(long time) {
         long timeMillis = getInMillis(time);
         long lastCleanupTime = lastCleanupTimeMs.get();
         boolean timeThresholdExceeded = timeMillis - lastCleanupTime > CLEANUP_INTERVAL.toMillis();
@@ -305,7 +310,7 @@ public class PercentileView {
      *
      * @return the metrics containing the percentiles and min / max
      */
-    Collection<Metric> computeMetrics(Timestamp time) {
+    Collection<MetricData> computeMetrics(long time) {
         removeStalePoints(time);
         ResultSeriesCollector resultSeries = new ResultSeriesCollector();
         for (Map.Entry<List<String>, WindowedDoubleQueue> series : seriesValues.entrySet()) {
@@ -322,15 +327,19 @@ public class PercentileView {
                 computeSeries(tagValues, data, time, resultSeries);
             }
         }
-        List<Metric> resultMetrics = new ArrayList<>();
+
+        // TODO: get current resource (via OpenTelemetryController?)
+        Resource resource = Resource.getDefault();
+        List<MetricData> resultMetrics = new ArrayList<>();
         if (!percentiles.isEmpty()) {
-            resultMetrics.add(Metric.create(percentileMetricDescriptor, resultSeries.percentileSeries));
+            ImmutableMetricData.createDoubleGauge(resource, InstrumentationScopeInfo.create(percentileMetricDescriptor.getName()), percentileMetricDescriptor.getName(), percentileMetricDescriptor.getDescription(), percentileMetricDescriptor.getUnit(), resultSeries.percentileSeries);
+
         }
         if (isMinEnabled()) {
-            resultMetrics.add(Metric.create(minMetricDescriptor, resultSeries.minSeries));
+            ImmutableMetricData.createDoubleGauge(resource, InstrumentationScopeInfo.create(minMetricDescriptor.getName()), minMetricDescriptor.getName(), minMetricDescriptor.getDescription(), minMetricDescriptor.getUnit(), resultSeries.minSeries);
         }
         if (isMaxEnabled()) {
-            resultMetrics.add(Metric.create(maxMetricDescriptor, resultSeries.maxSeries));
+            ImmutableMetricData.createDoubleGauge(resource, InstrumentationScopeInfo.create(maxMetricDescriptor.getName()), maxMetricDescriptor.getName(), maxMetricDescriptor.getDescription(), maxMetricDescriptor.getUnit(), resultSeries.maxSeries);
         }
         return resultMetrics;
     }
@@ -343,7 +352,9 @@ public class PercentileView {
         return maxMetricDescriptor != null;
     }
 
-    private void computeSeries(List<String> tagValues, double[] data, Timestamp time, ResultSeriesCollector resultSeries) {
+    private void computeSeries(List<String> tagValues, double[] data, long time, ResultSeriesCollector resultSeries) {
+        Attributes attributes = toAttributes(tagIndices, tagValues);
+
         if (isMinEnabled() || isMaxEnabled()) {
             double minValue = Double.MAX_VALUE;
             double maxValue = -Double.MAX_VALUE;
@@ -352,10 +363,10 @@ public class PercentileView {
                 maxValue = Math.max(maxValue, value);
             }
             if (isMinEnabled()) {
-                resultSeries.addMinimum(minValue, time, tagValues);
+                resultSeries.addMinimum(minValue, time, attributes);
             }
             if (isMaxEnabled()) {
-                resultSeries.addMaximum(maxValue, time, tagValues);
+                resultSeries.addMaximum(maxValue, time, attributes);
             }
         }
         if (!percentiles.isEmpty()) {
@@ -363,7 +374,7 @@ public class PercentileView {
             percentileComputer.setData(data);
             for (double percentile : percentiles) {
                 double percentileValue = percentileComputer.evaluate(percentile * 100);
-                resultSeries.addPercentile(percentileValue, time, tagValues, percentile);
+                resultSeries.addPercentile(percentileValue, time, attributes, percentile);
             }
         }
     }
@@ -373,71 +384,84 @@ public class PercentileView {
         return PERCENTILE_TAG_FORMATTER.format(percentile);
     }
 
-    private List<String> getTagsList(TagContext tagContext) {
+    private List<String> getTagsList(Baggage tagContext) {
         String[] tagValues = new String[tagIndices.size()];
         Arrays.fill(tagValues, "");
-        for (Iterator<Tag> it = InternalUtils.getTags(tagContext); it.hasNext(); ) {
-            Tag tag = it.next();
-            String tagKey = tag.getKey().getName();
-            Integer index = tagIndices.get(tagKey);
+        tagContext.forEach((s, baggageEntry) -> {
+            Integer index = tagIndices.get(s);
             if (index != null) {
-                tagValues[index] = tag.getValue().asString();
+                tagValues[index] = baggageEntry.getValue();
             }
-        }
+        });
         return Arrays.asList(tagValues);
     }
 
-    private List<LabelValue> toLabelValues(List<String> tagValues) {
-        return tagValues
-                .stream()
-                .map(LabelValue::create)
-                .collect(Collectors.toList());
+    private Attributes toAttributes(List<String> tagKeys, List<String> tagValues) {
+        AttributesBuilder attributesBuilder = Attributes.builder();
+        for (int i = 0; i < tagKeys.size(); i++) {
+            attributesBuilder.put(AttributeKey.stringKey(tagKeys.get(i)), tagValues.get(tagIndices.get(tagKeys.get(i))));
+        }
+        return attributesBuilder.build();
     }
 
-    private List<LabelValue> toLabelValuesWithPercentile(List<String> tagValues, double percentile) {
-        List<LabelValue> result = new ArrayList<>(toLabelValues(tagValues));
-        result.add(LabelValue.create(getPercentileTag(percentile)));
+    private Attributes toAttributes(Map<String, Integer> tagIndices, List<String> tagValues) {
+        AttributesBuilder attributesBuilder = Attributes.builder();
+        for (Map.Entry<String, Integer> entry : tagIndices.entrySet()) {
+            attributesBuilder.put(AttributeKey.stringKey(entry.getKey()), tagValues.get(entry.getValue()));
+        }
+        return attributesBuilder.build();
+    }
+
+    private List<String> toLabelValues(List<String> tagValues) {
+        return tagValues;
+    }
+
+    private List<String> toLabelValuesWithPercentile(List<String> tagValues, double percentile) {
+        List<String> result = new ArrayList<>(toLabelValues(tagValues));
+        result.add(getPercentileTag(percentile));
         return result;
     }
 
-    private List<LabelKey> getLabelKeysInOrderForPercentiles() {
-        LabelKey[] keys = new LabelKey[tagIndices.size() + 1];
-        tagIndices.forEach((tag, index) -> keys[index] = LabelKey.create(tag, ""));
-        keys[keys.length - 1] = LabelKey.create(PERCENTILE_TAG_KEY, "");
+    private List<AttributeKey> getLabelKeysInOrderForPercentiles() {
+        AttributeKey[] keys = new AttributeKey[tagIndices.size() + 1];
+        tagIndices.forEach((tag, index) -> keys[index] = AttributeKey.stringKey(tag));
+        keys[keys.length - 1] = AttributeKey.stringKey(PERCENTILE_TAG_KEY);
         return Arrays.asList(keys);
     }
 
-    private List<LabelKey> getLabelKeysInOrderForMinMax() {
-        LabelKey[] keys = new LabelKey[tagIndices.size()];
-        tagIndices.forEach((tag, index) -> keys[index] = LabelKey.create(tag, ""));
+    private List<AttributeKey> getLabelKeysInOrderForMinMax() {
+        AttributeKey[] keys = new AttributeKey[tagIndices.size()];
+        tagIndices.forEach((tag, index) -> keys[index] = AttributeKey.stringKey(tag));
         return Arrays.asList(keys);
     }
 
-    private long getInMillis(Timestamp time) {
-        return Duration.ofSeconds(time.getSeconds()).toMillis() + Duration.ofNanos(time.getNanos()).toMillis();
+    private long getInMillis(long timeInNanos) {
+        return TimeUnit.MILLISECONDS.toMillis(timeInNanos);
     }
 
     private class ResultSeriesCollector {
 
-        private List<TimeSeries> minSeries = new ArrayList<>();
+        private GaugeData minSeries = ImmutableGaugeData.create(Collections.emptyList());
 
-        private List<TimeSeries> maxSeries = new ArrayList<>();
+        private GaugeData maxSeries = ImmutableGaugeData.create(Collections.emptyList());
 
-        private List<TimeSeries> percentileSeries = new ArrayList<>();
+        private GaugeData percentileSeries = ImmutableGaugeData.create(Collections.emptyList());
 
-        void addMinimum(double value, Timestamp time, List<String> tags) {
-            Point pt = Point.create(Value.doubleValue(value), time);
-            minSeries.add(TimeSeries.createWithOnePoint(toLabelValues(tags), pt, time));
+        void addMinimum(double value, long time, Attributes attributes) {
+            PointData pt = ImmutableDoublePointData.create(time, time, attributes, value);
+            minSeries.getPoints().add(pt);
         }
 
-        void addMaximum(double value, Timestamp time, List<String> tags) {
-            Point pt = Point.create(Value.doubleValue(value), time);
-            maxSeries.add(TimeSeries.createWithOnePoint(toLabelValues(tags), pt, time));
+        void addMaximum(double value, long time, Attributes attributes) {
+            PointData pt = ImmutableDoublePointData.create(time, time, attributes, value);
+            maxSeries.getPoints().add(pt);
         }
 
-        void addPercentile(double value, Timestamp time, List<String> tags, double percentile) {
-            Point pt = Point.create(Value.doubleValue(value), time);
-            percentileSeries.add(TimeSeries.createWithOnePoint(toLabelValuesWithPercentile(tags, percentile), pt, time));
+        void addPercentile(double value, long time, Attributes attributes, double percentile) {
+            AttributesBuilder combinedAttributesBuilder = attributes.toBuilder();
+            attributes.forEach((attributeKey, o) -> combinedAttributesBuilder.put(attributeKey.getKey(), getPercentileTag(percentile)));
+            PointData pt = ImmutableDoublePointData.create(time, time, combinedAttributesBuilder.build(), value);
+            percentileSeries.getPoints().add(pt);
         }
     }
 

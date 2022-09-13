@@ -2,8 +2,6 @@ package rocks.inspectit.ocelot.core.exporter;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import io.github.netmikey.logunit.api.LogCapturer;
-import io.opencensus.trace.Tracing;
-import io.opencensus.trace.samplers.Samplers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -70,9 +68,7 @@ public class JaegerExporterServiceIntTest {
 
         @Test
         void verifyTraceSent() throws InterruptedException {
-            Tracing.getTracer().spanBuilder("jaegerspan").setSampler(Samplers.alwaysSample()).startSpanAndRun(() -> {
-                System.out.println("dummy runnable");
-            });
+            makeSpansAndFlush("jaegerParentSpan", "jaegerChildSpan");
 
             await().atMost(15, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS).untilAsserted(() -> {
                 Instances.openTelemetryController.flush();

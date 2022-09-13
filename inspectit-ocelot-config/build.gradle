@@ -41,9 +41,9 @@ dependencies {
             'org.assertj:assertj-core:3.11.1'
     )
 
-    // the api is included as compile only because the open census api has to be decoupled
+    // the api is included as compile only because the OpenTelemetry api has to be decoupled
     // from the inspectIT core to allow it to be pushed to the bootstrap
     compileOnly (
-            "io.opencensus:opencensus-api:${openCensusVersion}"
+            "io.opentelemetry:opentelemetry-api:${openTelemetryVersion}"
     )
 }

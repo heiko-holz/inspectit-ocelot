@@ -23,6 +23,9 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
+/**
+ * Integration test for {@link PrometheusExporterService}
+ */
 @TestPropertySource(properties = {"inspectit.exporters.metrics.prometheus.enabled=ENABLED"})
 @DirtiesContext
 public class PrometheusExporterServiceIntTest extends SpringTestBase {

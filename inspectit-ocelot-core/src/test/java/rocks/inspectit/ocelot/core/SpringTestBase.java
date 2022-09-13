@@ -4,6 +4,14 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.Appender;
+import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.metrics.LongCounter;
+import io.opentelemetry.api.metrics.Meter;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mockito;
@@ -18,6 +26,7 @@ import org.springframework.core.env.StandardEnvironment;
 import org.springframework.mock.env.MockPropertySource;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
+import rocks.inspectit.ocelot.bootstrap.Instances;
 import rocks.inspectit.ocelot.core.config.InspectitConfigChangedEvent;
 import rocks.inspectit.ocelot.core.config.InspectitEnvironment;
 import rocks.inspectit.ocelot.core.config.spring.SpringConfiguration;
@@ -38,6 +47,10 @@ import static org.mockito.Mockito.when;
 @ContextConfiguration(classes = SpringConfiguration.class, initializers = SpringTestBase.TestContextInitializer.class)
 public class SpringTestBase {
 
+    public static final String INSTRUMENTATION_NAME = "rocks.inspectit.ocelot.instrumentation";
+
+    public static final String INSTRUMENTATION_VERSION = "0.0.1";
+
     @Autowired
     private TestContextInitializer.TestInspectitEnvironment env;
 
@@ -56,6 +69,83 @@ public class SpringTestBase {
     public void updateProperties(Consumer<MockPropertySource> propsCustomizer) {
         env.updatePropertySources((propsList) -> propsCustomizer.accept(env.mockProperties));
         env.addAppender();
+    }
+
+    /**
+     * Gets the {@link Tracer} registered at {@link GlobalOpenTelemetry#getTracer(String, String)}
+     *
+     * @return The {@link Tracer} registered at {@link GlobalOpenTelemetry#getTracer(String, String)}
+     */
+    protected Tracer getTracer() {
+        return GlobalOpenTelemetry.getTracer(INSTRUMENTATION_NAME, INSTRUMENTATION_VERSION);
+    }
+
+    /**
+     * Creates a nested trace with parent and child span and flushes them.
+     *
+     * @param parentSpanName the name of the parent {@link Span}
+     * @param childSpanName  the name of the child {@link Span}
+     */
+    protected void makeSpansAndFlush(String parentSpanName, String childSpanName) {
+        // start span and nested span
+        Span parentSpan = getTracer().spanBuilder(parentSpanName).startSpan();
+        try (Scope scope = parentSpan.makeCurrent()) {
+            Span childSpan = getTracer().spanBuilder(childSpanName).startSpan();
+            try (Scope child = childSpan.makeCurrent()) {
+                // do sth
+            } finally {
+                childSpan.end();
+            }
+        } finally {
+            parentSpan.end();
+        }
+
+        // flush pending spans
+        Instances.openTelemetryController.flush();
+    }
+
+    /**
+     * Creates, starts and flushes a span
+     *
+     * @param spanName The name of the {@link Span}
+     */
+    protected void makeSpanAndFlush(String spanName) {
+        Span span = getTracer().spanBuilder(spanName).startSpan();
+        try (Scope scope = span.makeCurrent()) {
+
+        } finally {
+            span.end();
+        }
+        Instances.openTelemetryController.flush();
+    }
+
+    /**
+     * Records some dummy metrics and flushes them.
+     */
+    protected void recordMetricsAndFlush() {
+        recordMetricsAndFlush(1, "my-key", "my-val");
+    }
+
+    /**
+     * Records a counter with the given value and tag
+     *
+     * @param value  the value to add to the counter
+     * @param tagKey the key of the tag
+     * @param tagVal the value of the tag
+     */
+    protected void recordMetricsAndFlush(int value, String tagKey, String tagVal) {
+        // get the meter and create a counter
+        Meter meter = GlobalOpenTelemetry.getMeterProvider()
+                .meterBuilder("rocks.inspectit.ocelot")
+                .setInstrumentationVersion("0.0.1")
+                .build();
+        LongCounter counter = meter.counterBuilder("my-counter").setDescription("My counter").setUnit("1").build();
+
+        // record counter
+        counter.add(value, Attributes.of(AttributeKey.stringKey(tagKey), tagVal));
+
+        Instances.openTelemetryController.flush();
+
     }
 
     @BeforeEach

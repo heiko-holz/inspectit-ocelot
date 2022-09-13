@@ -1,9 +1,6 @@
 package rocks.inspectit.ocelot.core.instrumentation.hook.actions;
 
-import io.opencensus.tags.TagContext;
-import io.opencensus.tags.TagKey;
-import io.opencensus.tags.TagValue;
-import io.opencensus.tags.Tags;
+import io.opentelemetry.api.baggage.Baggage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -22,7 +19,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -53,8 +50,7 @@ public class MetricsRecorderTest {
         void verifyNullValueDataMetricIgnored() {
             VariableAccessor variableAccess = Mockito.mock(VariableAccessor.class);
             when(variableAccess.get(any())).thenReturn(null);
-            MetricAccessor metricAccessor = new MetricAccessor("my_metric", variableAccess, Collections.emptyMap(), Collections
-                    .emptyMap());
+            MetricAccessor metricAccessor = new MetricAccessor("my_metric", variableAccess, Collections.emptyMap(), Collections.emptyMap());
             MetricsRecorder rec = new MetricsRecorder(Collections.singletonList(metricAccessor), commonTagsManager, metricsManager);
 
             rec.execute(executionContext);
@@ -66,10 +62,8 @@ public class MetricsRecorderTest {
 
             rec.execute(executionContext);
 
-            verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric"), any(Number.class), eq(Tags.getTagger()
-                    .empty()));
-            verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric"), eq((Number) 100L), eq(Tags.getTagger()
-                    .empty()));
+            verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric"), any(Number.class), eq(Baggage.empty()));
+            verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric"), eq((Number) 100L), eq(Baggage.empty()));
         }
 
         @Test
@@ -78,48 +72,38 @@ public class MetricsRecorderTest {
             VariableAccessor dataB = Mockito.mock(VariableAccessor.class);
             when(dataA.get(any())).thenReturn(100.0);
             when(dataB.get(any())).thenReturn("notanumber");
-            MetricAccessor metricAccessorA = new MetricAccessor("my_metric1", dataA, Collections.emptyMap(), Collections
-                    .emptyMap());
-            MetricAccessor metricAccessorB = new MetricAccessor("my_metric2", dataB, Collections.emptyMap(), Collections
-                    .emptyMap());
+            MetricAccessor metricAccessorA = new MetricAccessor("my_metric1", dataA, Collections.emptyMap(), Collections.emptyMap());
+            MetricAccessor metricAccessorB = new MetricAccessor("my_metric2", dataB, Collections.emptyMap(), Collections.emptyMap());
 
             MetricsRecorder rec = new MetricsRecorder(Arrays.asList(metricAccessorA, metricAccessorB), commonTagsManager, metricsManager);
 
             rec.execute(executionContext);
 
             verify(dataB).get(any());
-            verify(metricsManager, times(1)).tryRecordingMeasurement(any(String.class), any(Number.class), eq(Tags.getTagger()
-                    .empty()));
-            verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric1"), eq((Number) 100.0d), eq(Tags.getTagger()
-                    .empty()));
+            verify(metricsManager, times(1)).tryRecordingMeasurement(any(String.class), any(Number.class), eq(Baggage.empty()));
+            verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric1"), eq((Number) 100.0d), eq(Baggage.empty()));
 
             rec.execute(executionContext);
 
             verify(dataB, times(2)).get(any());
-            verify(metricsManager, times(2)).tryRecordingMeasurement(any(String.class), any(Number.class), eq(Tags.getTagger()
-                    .empty()));
-            verify(metricsManager, times(2)).tryRecordingMeasurement(eq("my_metric1"), eq((Number) 100.0d), eq(Tags.getTagger()
-                    .empty()));
+            verify(metricsManager, times(2)).tryRecordingMeasurement(any(String.class), any(Number.class), eq(Baggage.empty()));
+            verify(metricsManager, times(2)).tryRecordingMeasurement(eq("my_metric1"), eq((Number) 100.0d), eq(Baggage.empty()));
         }
 
         @Test
         void commonTagsIncluded() {
             when(inspectitContext.getData("common")).thenReturn("overwrite");
-            when(commonTagsManager.getCommonTagKeys()).thenReturn(Collections.singletonList(TagKey.create("common")));
+            when(commonTagsManager.getCommonTagKeys()).thenReturn(Collections.singletonList("common"));
 
             VariableAccessor variableAccess = Mockito.mock(VariableAccessor.class);
             when(variableAccess.get(any())).thenReturn(100L);
 
-            MetricAccessor metricAccessor = new MetricAccessor("my_metric", variableAccess, Collections.emptyMap(), Collections
-                    .emptyMap());
+            MetricAccessor metricAccessor = new MetricAccessor("my_metric", variableAccess, Collections.emptyMap(), Collections.emptyMap());
             MetricsRecorder rec = new MetricsRecorder(Collections.singletonList(metricAccessor), commonTagsManager, metricsManager);
 
             rec.execute(executionContext);
 
-            TagContext expected = Tags.getTagger()
-                    .emptyBuilder()
-                    .putLocal(TagKey.create("common"), TagValue.create("overwrite"))
-                    .build();
+            Baggage expected = Baggage.builder().put("common", "overwrite").build();
             verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric"), eq((Number) 100L), eq(expected));
             verifyNoMoreInteractions(inspectitContext);
         }
@@ -129,16 +113,12 @@ public class MetricsRecorderTest {
             VariableAccessor variableAccess = Mockito.mock(VariableAccessor.class);
             when(variableAccess.get(any())).thenReturn(100L);
 
-            MetricAccessor metricAccessor = new MetricAccessor("my_metric", variableAccess, Collections.singletonMap("constant", "tag"), Collections
-                    .emptyMap());
+            MetricAccessor metricAccessor = new MetricAccessor("my_metric", variableAccess, Collections.singletonMap("constant", "tag"), Collections.emptyMap());
             MetricsRecorder rec = new MetricsRecorder(Collections.singletonList(metricAccessor), commonTagsManager, metricsManager);
 
             rec.execute(executionContext);
 
-            TagContext expected = Tags.getTagger()
-                    .emptyBuilder()
-                    .putLocal(TagKey.create("constant"), TagValue.create("tag"))
-                    .build();
+            Baggage expected = Baggage.builder().put("constant", "tag").build();
             verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric"), any(Number.class), eq(expected));
             verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric"), eq((Number) 100L), eq(expected));
         }
@@ -150,13 +130,12 @@ public class MetricsRecorderTest {
             VariableAccessor variableAccess = Mockito.mock(VariableAccessor.class);
             when(variableAccess.get(any())).thenReturn(100L);
 
-            MetricAccessor metricAccessor = new MetricAccessor("my_metric", variableAccess, Collections.emptyMap(), Collections
-                    .singletonMap("data", mockAccessor));
+            MetricAccessor metricAccessor = new MetricAccessor("my_metric", variableAccess, Collections.emptyMap(), Collections.singletonMap("data", mockAccessor));
             MetricsRecorder rec = new MetricsRecorder(Collections.singletonList(metricAccessor), commonTagsManager, metricsManager);
 
             rec.execute(executionContext);
 
-            TagContext expected = Tags.getTagger().empty();
+            Baggage expected = Baggage.empty();
             verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric"), any(Number.class), eq(expected));
             verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric"), eq((Number) 100L), eq(expected));
         }
@@ -169,16 +148,12 @@ public class MetricsRecorderTest {
             VariableAccessor variableAccess = Mockito.mock(VariableAccessor.class);
             when(variableAccess.get(any())).thenReturn(100L);
 
-            MetricAccessor metricAccessor = new MetricAccessor("my_metric", variableAccess, Collections.emptyMap(), Collections
-                    .singletonMap("data", mockAccessor));
+            MetricAccessor metricAccessor = new MetricAccessor("my_metric", variableAccess, Collections.emptyMap(), Collections.singletonMap("data", mockAccessor));
             MetricsRecorder rec = new MetricsRecorder(Collections.singletonList(metricAccessor), commonTagsManager, metricsManager);
 
             rec.execute(executionContext);
 
-            TagContext expected = Tags.getTagger()
-                    .emptyBuilder()
-                    .putLocal(TagKey.create("data"), TagValue.create("value"))
-                    .build();
+            Baggage expected = Baggage.builder().put("data", "value").build();
             verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric"), any(Number.class), eq(expected));
             verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric"), eq((Number) 100L), eq(expected));
         }
@@ -213,17 +188,14 @@ public class MetricsRecorderTest {
 
             InOrder inOrder = inOrder(metricsManager);
             // first recording
-            TagContext expected1 = Tags.getTagger().emptyBuilder()
-                    .putLocal(TagKey.create("cA"), TagValue.create("100"))
-                    .putLocal(TagKey.create("existing"), TagValue.create("data1"))
-                    .build();
+            Baggage expected1 = Baggage.builder().put("cA", "100").put("existing", "data1").build();
             inOrder.verify(metricsManager)
                     .tryRecordingMeasurement(eq("my_metric1"), eq((Number) 100.0d), eq(expected1));
             // second recording
-            TagContext expected2 = Tags.getTagger().emptyBuilder()
-                    .putLocal(TagKey.create("cA"), TagValue.create("200"))
-                    .putLocal(TagKey.create("existing1"), TagValue.create("12"))
-                    .putLocal(TagKey.create("existing2"), TagValue.create("false"))
+            Baggage expected2 = Baggage.builder()
+                    .put("cA", "200")
+                    .put("existing1", "12")
+                    .put("existing2", "false")
                     .build();
             inOrder.verify(metricsManager, times(1))
                     .tryRecordingMeasurement(eq("my_metric2"), eq((Number) 200.0d), eq(expected2));
@@ -239,16 +211,13 @@ public class MetricsRecorderTest {
             VariableAccessor variableAccess = Mockito.mock(VariableAccessor.class);
             when(variableAccess.get(any())).thenReturn(100L);
 
-            MetricAccessor metricAccessor = new MetricAccessor("my_metric", variableAccess, Collections.singletonMap("data", "constant"), Collections
-                    .singletonMap("data", mockAccessor));
+            MetricAccessor metricAccessor = new MetricAccessor("my_metric", variableAccess, Collections.singletonMap("data", "constant"), Collections.singletonMap("data", mockAccessor));
             MetricsRecorder rec = new MetricsRecorder(Collections.singletonList(metricAccessor), commonTagsManager, metricsManager);
 
             rec.execute(executionContext);
 
-            TagContext expected = Tags.getTagger()
-                    .emptyBuilder()
-                    .putLocal(TagKey.create("data"), TagValue.create("value"))
-                    .build();
+            Baggage expected = Baggage.builder().put("data", "value").build();
+
             verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric"), any(Number.class), eq(expected));
             verify(metricsManager, times(1)).tryRecordingMeasurement(eq("my_metric"), eq((Number) 100L), eq(expected));
         }

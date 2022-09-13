@@ -1,13 +1,10 @@
 package rocks.inspectit.ocelot.core.metrics.system;
 
-import io.opencensus.tags.TagContext;
-import io.opencensus.tags.TagKey;
-import io.opencensus.tags.Tagger;
+import io.opentelemetry.api.baggage.Baggage;
 import lombok.val;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import rocks.inspectit.ocelot.config.model.metrics.MetricsSettings;
-import rocks.inspectit.ocelot.core.tags.TagUtils;
+import rocks.inspectit.ocelot.core.tags.AttributesUtils;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
@@ -31,16 +28,10 @@ public class ThreadMetricsRecorder extends AbstractPollingMetricsRecorder {
 
     private static final String STATE_TAG_NAME = "state";
 
-    private TagKey stateTag;
-
     private ThreadMXBean threadBean;
-
-    @Autowired
-    private Tagger tagger;
 
     public ThreadMetricsRecorder() {
         super("metrics.threads");
-        stateTag = TagKey.create(STATE_TAG_NAME);
         threadBean = ManagementFactory.getThreadMXBean();
     }
 
@@ -74,15 +65,16 @@ public class ThreadMetricsRecorder extends AbstractPollingMetricsRecorder {
     private void recordStateMetric() {
         String stateMeasureName = METRIC_NAME_PREFIX + STATE_METRIC_NAME;
         for (Thread.State state : Thread.State.values()) {
-            TagContext tags = tagger.currentBuilder()
-                    .putLocal(stateTag, TagUtils.createTagValue(stateTag.getName(), state.name()))
+            Baggage baggage = Baggage.current()
+                    .toBuilder()
+                    .put(STATE_TAG_NAME, AttributesUtils.createAttributeValue(STATE_TAG_NAME, state.name()))
                     .build();
             long count = Arrays.stream(threadBean.getThreadInfo(threadBean.getAllThreadIds()))
                     .filter(Objects::nonNull)
                     .map(ThreadInfo::getThreadState)
                     .filter(s -> s == state)
                     .count();
-            measureManager.tryRecordingMeasurement(stateMeasureName, count, tags);
+            measureManager.tryRecordingMeasurement(stateMeasureName, count, baggage);
 
         }
     }

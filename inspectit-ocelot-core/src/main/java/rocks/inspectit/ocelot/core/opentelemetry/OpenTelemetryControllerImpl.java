@@ -1,16 +1,26 @@
 package rocks.inspectit.ocelot.core.opentelemetry;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.opencensusshim.metrics.OpenCensusMetrics;
+import io.opentelemetry.api.metrics.ObservableMeasurement;
+import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
+import io.opentelemetry.context.propagation.ContextPropagators;
+import io.opentelemetry.context.propagation.TextMapPropagator;
+import io.opentelemetry.extension.trace.propagation.B3Propagator;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.metrics.InstrumentSelector;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
 import io.opentelemetry.sdk.metrics.SdkMeterProviderBuilder;
+import io.opentelemetry.sdk.metrics.View;
+import io.opentelemetry.sdk.metrics.export.MetricReader;
+import io.opentelemetry.sdk.metrics.internal.export.MetricProducer;
 import io.opentelemetry.sdk.resources.Resource;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.SdkTracerProviderBuilder;
+import io.opentelemetry.sdk.trace.SpanLimits;
 import io.opentelemetry.sdk.trace.SpanProcessor;
 import io.opentelemetry.sdk.trace.export.BatchSpanProcessor;
 import io.opentelemetry.sdk.trace.export.SpanExporter;
@@ -31,12 +41,15 @@ import rocks.inspectit.ocelot.config.model.InspectitConfig;
 import rocks.inspectit.ocelot.core.config.InspectitConfigChangedEvent;
 import rocks.inspectit.ocelot.core.config.InspectitEnvironment;
 import rocks.inspectit.ocelot.core.exporter.DynamicallyActivatableMetricsExporterService;
+import rocks.inspectit.ocelot.core.instrumentation.context.propagation.DatadogFormat;
 import rocks.inspectit.ocelot.core.opentelemetry.trace.CustomIdGenerator;
-import rocks.inspectit.ocelot.core.utils.OpenCensusShimUtils;
 import rocks.inspectit.ocelot.core.utils.OpenTelemetryUtils;
 
 import javax.annotation.PostConstruct;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -68,6 +81,16 @@ public class OpenTelemetryControllerImpl implements IOpenTelemetryController {
     private boolean metricSettingsChanged = false;
 
     /**
+     * Whether {@link MetricProducer} were registered or unregistered from {@link #registeredMetricProducers}
+     */
+    private boolean metricsProducersChanged = false;
+
+    /**
+     * Whether {@link View} were registered or unregistered from {@link #registeredViews}
+     */
+    private boolean viewsChanged = false;
+
+    /**
      * whether {@link GlobalOpenTelemetry} has been successfully been configured and is active.
      */
     @Getter
@@ -96,6 +119,19 @@ public class OpenTelemetryControllerImpl implements IOpenTelemetryController {
     @VisibleForTesting
     @Getter(AccessLevel.PACKAGE)
     Map<String, DynamicallyActivatableMetricsExporterService> registeredMetricExporterServices = new ConcurrentHashMap<>();
+
+    /**
+     * The registered {@link io.opentelemetry.sdk.metrics.internal.export.MetricProducer}.
+     */
+    @VisibleForTesting
+    @Getter(AccessLevel.PACKAGE)
+    Set<MetricProducer> registeredMetricProducers = new LinkedHashSet<>();
+
+    /**
+     * The registered {@link View}
+     */
+    @Getter
+    Map<ObservableMeasurement, View> registeredViews = new ConcurrentHashMap<>();
 
     /**
      * The {@link OpenTelemetryImpl} that wraps {@link OpenTelemetrySdk}
@@ -188,21 +224,17 @@ public class OpenTelemetryControllerImpl implements IOpenTelemetryController {
             tracingSettingsChanged = true;
         }
 
-        if (!active || metricSettingsChanged || tracingSettingsChanged) {
+        if (!active || metricSettingsChanged || tracingSettingsChanged || metricsProducersChanged) {
 
             // configure tracing if not configured or when tracing settings changed
             SdkTracerProvider sdkTracerProvider = !(tracingSettingsChanged || !active) ? tracerProvider : configureTracing(configuration);
-
             // configure meter provider (metrics) if not configured or when metrics settings changed
-            SdkMeterProvider sdkMeterProvider = !(metricSettingsChanged || !active) ? meterProvider : configureMeterProvider();
+            SdkMeterProvider sdkMeterProvider = !(metricSettingsChanged || metricsProducersChanged || viewsChanged || !active) ? meterProvider : configureMeterProvider();
 
             // only if metrics settings changed or OTEL has not been configured and is running, we need to rebuild the OpenTelemetrySdk
-            if (metricSettingsChanged || !active) {
+            if (sdkMeterProvider != meterProvider || !active) {
 
-                OpenTelemetrySdk openTelemetrySdk = OpenTelemetrySdk.builder()
-                        .setTracerProvider(sdkTracerProvider)
-                        .setMeterProvider(sdkMeterProvider)
-                        .build();
+                OpenTelemetrySdk openTelemetrySdk = buildOpenTelemetry(configuration, sdkTracerProvider, sdkMeterProvider);
                 openTelemetry.set(openTelemetrySdk, false, false);
             }
             success = null != sdkMeterProvider && null != sdkTracerProvider;
@@ -291,6 +323,16 @@ public class OpenTelemetryControllerImpl implements IOpenTelemetryController {
         metricSettingsChanged = true;
     }
 
+    @Override
+    public void notifyMetricProducersChanged() {
+        metricsProducersChanged = true;
+    }
+
+    @Override
+    public void notifyViewsChanged() {
+        viewsChanged = true;
+    }
+
     /**
      * Initializes tracer and meter provider components, i.e., {@link #openTelemetry}, {@link #multiSpanExporter}, {@link #spanProcessor}, {@link #sampler}, {@link SdkTracerProvider}, and {@link SdkMeterProvider}
      *
@@ -301,10 +343,7 @@ public class OpenTelemetryControllerImpl implements IOpenTelemetryController {
         meterProvider = buildMeterProvider(configuration);
         tracerProvider = buildTracerProvider(configuration);
 
-        OpenTelemetrySdk openTelemetrySdk = OpenTelemetrySdk.builder()
-                .setTracerProvider(tracerProvider)
-                .setMeterProvider(meterProvider)
-                .build();
+        OpenTelemetrySdk openTelemetrySdk = buildOpenTelemetry(configuration, tracerProvider, meterProvider);
 
         openTelemetry = new OpenTelemetryImpl(openTelemetrySdk);
 
@@ -317,11 +356,37 @@ public class OpenTelemetryControllerImpl implements IOpenTelemetryController {
             GlobalOpenTelemetry.resetForTest();
         }
         openTelemetry.registerGlobal();
-
-        // update the OTEL_TRACER field in OpenTelemetrySpanBuilderImpl in case that it was already set
-        OpenCensusShimUtils.updateOpenTelemetryTracerInOpenTelemetrySpanBuilderImpl();
     }
 
+    /**
+     * Builds a new {@link OpenTelemetrySdk} based on the given {@code config} and {@code tracerProvider} and {@code meterProvider}. The {@code config} is used to extract the {@link rocks.inspectit.ocelot.config.model.tracing.PropagationFormat}
+     *
+     * @param config
+     * @param tracerProvider
+     * @param meterProvider
+     *
+     * @return A new {@link OpenTelemetrySdk} based on the given {@code config}, {@code tracerProvider}, and {@code meterProvider}.
+     */
+    private static OpenTelemetrySdk buildOpenTelemetry(InspectitConfig config, SdkTracerProvider tracerProvider, SdkMeterProvider meterProvider) {
+        TextMapPropagator propagator = null;
+        switch (config.getTracing().getPropagationFormat()) {
+            case B3:
+                propagator = B3Propagator.injectingMultiHeaders();
+                break;
+            case DATADOG:
+                propagator = DatadogFormat.INSTANCE;
+                break;
+            case TRACE_CONTEXT:
+                propagator = W3CTraceContextPropagator.getInstance();
+                break;
+        }
+        return OpenTelemetrySdk.builder()
+                .setTracerProvider(tracerProvider)
+                .setMeterProvider(meterProvider)
+                .setPropagators(ContextPropagators.create(propagator))
+                .build();
+    }
+    
     /**
      * Builds a new {@link SdkTracerProvider} based on the given {@link InspectitConfig}
      *
@@ -405,7 +470,17 @@ public class OpenTelemetryControllerImpl implements IOpenTelemetryController {
 
             // register metric reader for each service
             for (DynamicallyActivatableMetricsExporterService metricsExportService : registeredMetricExporterServices.values()) {
-                builder.registerMetricReader(OpenCensusMetrics.attachTo(metricsExportService.getNewMetricReader()));//OpenCensusMetrics.attachTo(metricsExportService.getNewMetricReader()));
+                MetricReader metricReader = metricsExportService.getNewMetricReader();
+                for (MetricProducer registeredMetricProducer : registeredMetricProducers) {
+                    metricReader.register(registeredMetricProducer);
+                }
+                builder.registerMetricReader(metricReader);//OpenCensusMetrics.attachTo(metricsExportService.getNewMetricReader()));
+            }
+            // register views
+            for (Map.Entry<ObservableMeasurement, View> entry : registeredViews.entrySet()) {
+                builder.registerView(InstrumentSelector.builder()
+                        .setName(OpenTelemetryUtils.getInstrumentDescriptor(entry.getKey()).getName())
+                        .build(), entry.getValue());
             }
 
             return builder.build();
@@ -481,10 +556,10 @@ public class OpenTelemetryControllerImpl implements IOpenTelemetryController {
         try {
             if (null == registeredMetricExporterServices.put(service.getName(), service)) {
                 notifyMetricsSettingsChanged();
-                log.info("The service {} was successfully registered.", service.getName());
+                log.info("The service '{}' was successfully registered.", service.getName());
                 return true;
             } else {
-                log.warn("The service {} was already registered!", service.getName());
+                log.warn("The service '{}' was already registered!", service.getName());
                 return false;
             }
         } catch (Exception e) {
@@ -520,4 +595,93 @@ public class OpenTelemetryControllerImpl implements IOpenTelemetryController {
     public boolean unregisterMetricExporterService(DynamicallyActivatableMetricsExporterService service) {
         return unregisterMetricExporterService(service.getName());
     }
+
+    /**
+     * Registers a {@link MetricProducer}
+     *
+     * @param metricProducer
+     *
+     * @return Whether the {@link MetricProducer} was successfully registered. Returns false if the {@code MetricProducer} was already registered.
+     */
+    public synchronized boolean registerMetricProducer(MetricProducer metricProducer) {
+        Preconditions.checkNotNull(metricProducer, "metricProducer");
+        // Updating the set of MetricProducers happens under a lock to avoid multiple add or remove
+        // operations to happen in the same time.
+        Set<MetricProducer> newMetricProducers = new LinkedHashSet<>(registeredMetricProducers);
+        if (!newMetricProducers.add(metricProducer)) {
+            // The element already present, no need to update the current set of MetricProducers.
+            return false;
+        }
+        registeredMetricProducers = Collections.unmodifiableSet(newMetricProducers);
+        return true;
+    }
+
+    /**
+     * Unregisters a {@link MetricProducer}
+     *
+     * @param metricProducer
+     *
+     * @return Whether the {@link MetricProducer} was successfully unregistered. Returns false if the {@code MetricProducer} was not previously registered.
+     */
+    public synchronized boolean unregisterMetricProducer(MetricProducer metricProducer) {
+        Preconditions.checkNotNull(metricProducer, "metricProducer");
+        // Updating the set of MetricProducers happens under a lock to avoid multiple add or remove
+        // operations to happen in the same time.
+        Set<MetricProducer> newMetricProducers = new LinkedHashSet<>(registeredMetricProducers);
+        if (!newMetricProducers.remove(metricProducer)) {
+            // The element not present, no need to update the current set of MetricProducers.
+            return false;
+        }
+        registeredMetricProducers = Collections.unmodifiableSet(newMetricProducers);
+        return true;
+    }
+
+    /**
+     * Registers a {@link View} for the given {@code measure}
+     *
+     * @param measure
+     * @param view
+     *
+     * @return
+     */
+    public synchronized boolean registerView(ObservableMeasurement measure, View view) {
+        Preconditions.checkNotNull(view, "view");
+        if (!registeredViews.containsKey(measure)) {
+            registeredViews.put(measure, view);
+            log.info("The view '{}' for the measure '{}' was successfully registered", view.getName(), measure);
+            notifyViewsChanged();
+            return true;
+        } else {
+            log.warn("A view for the measure '{}' was already registered under the view '{}'. Unregister the previous view before the new view can be registered.", measure, view.getName());
+            return false;
+        }
+    }
+
+    /**
+     * Unregisters a {@link View} for the given {@code  measure}
+     *
+     * @param measureName
+     *
+     * @return
+     */
+    public synchronized boolean unregisterView(String measureName) {
+        if (null != registeredViews.remove(measureName)) {
+            log.info("The view for the measure '{}' was successfully removed.", measureName);
+            notifyViewsChanged();
+            return true;
+        } else {
+            log.warn("There was no view registered for the measure '{}'", measureName);
+            return false;
+        }
+    }
+
+    /**
+     * Gets the {@link SpanLimits} of the current {@link #tracerProvider}
+     *
+     * @return
+     */
+    public SpanLimits getSpanLimits() {
+        return tracerProvider.getSpanLimits();
+    }
+
 }

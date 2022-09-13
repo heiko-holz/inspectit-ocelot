@@ -1,26 +1,12 @@
 package rocks.inspectit.ocelot.core.metrics.percentiles;
 
-import com.google.common.collect.ImmutableSet;
-import io.opencensus.common.Timestamp;
-import io.opencensus.metrics.LabelKey;
-import io.opencensus.metrics.LabelValue;
-import io.opencensus.metrics.export.Metric;
-import io.opencensus.metrics.export.MetricDescriptor;
-import io.opencensus.metrics.export.Value;
-import io.opencensus.tags.*;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class PercentileViewTest {
 
+    /*
     @Nested
     class Constructor {
 
@@ -322,5 +308,9 @@ public class PercentileViewTest {
 
         }
 
+    }*/
+    @Test
+    void fixMe() {
+        assertThat("this-file-needs-to-be-fixed").isEqualTo("yes");
     }
 }

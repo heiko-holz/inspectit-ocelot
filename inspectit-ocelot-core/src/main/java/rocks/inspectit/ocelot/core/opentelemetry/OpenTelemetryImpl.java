@@ -9,8 +9,8 @@ import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.common.CompletableResultCode;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.SpanLimits;
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.extern.slf4j.Slf4j;
 import rocks.inspectit.ocelot.core.utils.OpenTelemetryUtils;
 
@@ -127,4 +127,12 @@ public class OpenTelemetryImpl implements OpenTelemetry {
         GlobalOpenTelemetry.set(this);
     }
 
+    /**
+     * Gets the {@link SpanLimits} of the {@link #getSdkTracerProvider()}
+     *
+     * @return The {@link SpanLimits} of the current {@link #getSdkTracerProvider()}
+     */
+    public SpanLimits getSpanLimits() {
+        return getSdkTracerProvider().getSpanLimits();
+    }
 }

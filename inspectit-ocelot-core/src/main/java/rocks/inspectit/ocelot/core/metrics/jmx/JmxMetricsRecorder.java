@@ -1,13 +1,10 @@
 package rocks.inspectit.ocelot.core.metrics.jmx;
 
-import static java.lang.Boolean.TRUE;
-
 import com.google.common.annotations.VisibleForTesting;
-import io.opencensus.common.Scope;
-import io.opencensus.stats.Measure;
-import io.opencensus.tags.TagContextBuilder;
-import io.opencensus.tags.TagKey;
-import io.opencensus.tags.Tagger;
+import io.opentelemetry.api.baggage.Baggage;
+import io.opentelemetry.api.baggage.BaggageBuilder;
+import io.opentelemetry.api.metrics.ObservableDoubleMeasurement;
+import io.opentelemetry.context.Scope;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -18,8 +15,8 @@ import rocks.inspectit.ocelot.config.model.metrics.definition.ViewDefinitionSett
 import rocks.inspectit.ocelot.config.model.metrics.jmx.JmxMetricsRecorderSettings;
 import rocks.inspectit.ocelot.core.metrics.MeasuresAndViewsManager;
 import rocks.inspectit.ocelot.core.metrics.system.AbstractPollingMetricsRecorder;
+import rocks.inspectit.ocelot.core.tags.AttributesUtils;
 import rocks.inspectit.ocelot.core.tags.CommonTagsManager;
-import rocks.inspectit.ocelot.core.tags.TagUtils;
 
 import javax.management.ObjectName;
 import java.time.Duration;
@@ -27,8 +24,10 @@ import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static java.lang.Boolean.TRUE;
+
 /**
- * Recorder for the values exposed by the JMX beans. Recorder is using a scarper based on the prometheus jmx_exporter,
+ * Recorder for the values exposed by the JMX beans. Recorder is using a scraper based on the prometheus jmx_exporter,
  * however this scraper supports multiple platforms servers as source.
  */
 @Service
@@ -50,7 +49,7 @@ public class JmxMetricsRecorder extends AbstractPollingMetricsRecorder implement
     /**
      * Tagger.
      */
-    public final Tagger tagger;
+    public final Baggage tagger;
 
     /**
      * Scraper of the MBean objects.
@@ -63,13 +62,13 @@ public class JmxMetricsRecorder extends AbstractPollingMetricsRecorder implement
     private boolean lowerCaseMetricName;
 
     @Autowired
-    public JmxMetricsRecorder(Tagger tagger) {
+    public JmxMetricsRecorder(Baggage tagger) {
         super("metrics.jmx");
         this.tagger = tagger;
     }
 
     @VisibleForTesting
-    JmxMetricsRecorder(Tagger tagger, MeasuresAndViewsManager measuresAndViewsManager, CommonTagsManager commonTagsManager) {
+    JmxMetricsRecorder(Baggage tagger, MeasuresAndViewsManager measuresAndViewsManager, CommonTagsManager commonTagsManager) {
         super("metrics.jmx");
         this.tagger = tagger;
         measureManager = measuresAndViewsManager;
@@ -125,27 +124,25 @@ public class JmxMetricsRecorder extends AbstractPollingMetricsRecorder implement
         // get the metric value first, if we have no value here skip
         metricValue(value).ifPresent(metricValue -> {
             String metricName = metricName(domain, beanProperties, attrKeys, attrName);
-            Measure.MeasureDouble measure = measureManager.getMeasureDouble(metricName).orElseGet(() -> {
+            ObservableDoubleMeasurement measure = measureManager.getMeasureDouble(metricName).orElseGet(() -> {
                 Map<String, Boolean> tags = beanProperties.keySet()
                         .stream()
                         .skip(1)
                         .collect(Collectors.toMap(Function.identity(), k -> true));
-
                 return registerMeasure(metricName, attrDescription, tags);
             });
 
-            TagContextBuilder tagContextBuilder = tagger.currentBuilder();
+            BaggageBuilder baggageBuilder = tagger.toBuilder();
             beanProperties.entrySet()
                     .stream()
                     .skip(1)
-                    .forEach(entry -> tagContextBuilder.putLocal(TagKey.create(entry.getKey()), TagUtils.createTagValue(entry
-                            .getKey(), entry.getValue())));
-
-            measureManager.tryRecordingMeasurement(measure.getName(), metricValue, tagContextBuilder.build());
+                    .forEach(entry -> baggageBuilder.put(entry.getKey(), AttributesUtils.createAttributeValue(entry.getKey(), entry.getValue())));
+            // TODO: do I need to access the measure's name here?!?
+            measureManager.tryRecordingMeasurement(metricName, metricValue, baggageBuilder.build());
         });
     }
 
-    private Measure.MeasureDouble registerMeasure(String metricName, String attrDescription, Map<String, Boolean> tags) {
+    private ObservableDoubleMeasurement registerMeasure(String metricName, String attrDescription, Map<String, Boolean> tags) {
         // TODO better description here, include the FQN as well?
         MetricDefinitionSettings definitionSettingsWithLastValueView = MetricDefinitionSettings.builder()
                 .description(attrDescription)

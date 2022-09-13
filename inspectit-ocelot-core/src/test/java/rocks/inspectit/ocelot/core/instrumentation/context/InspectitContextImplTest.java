@@ -1,10 +1,11 @@
 package rocks.inspectit.ocelot.core.instrumentation.context;
 
-import io.opencensus.common.Scope;
-import io.opencensus.tags.*;
-import io.opencensus.trace.Span;
-import io.opencensus.trace.SpanContext;
-import io.opencensus.trace.Tracing;
+import io.opentelemetry.api.baggage.Baggage;
+import io.opentelemetry.api.baggage.BaggageBuilder;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -20,6 +21,7 @@ import rocks.inspectit.ocelot.config.model.instrumentation.data.PropagationMode;
 import rocks.inspectit.ocelot.core.SpringTestBase;
 import rocks.inspectit.ocelot.core.instrumentation.config.model.propagation.PropagationMetaData;
 import rocks.inspectit.ocelot.core.testutils.GcUtils;
+import rocks.inspectit.ocelot.core.utils.OpenTelemetryUtils;
 
 import java.lang.ref.WeakReference;
 import java.util.Collections;
@@ -39,9 +41,8 @@ public class InspectitContextImplTest extends SpringTestBase {
     PropagationMetaData propagation;
 
     Map<String, String> getCurrentTagsAsMap() {
-        HashMap<String, String> result = new HashMap<>();
-        InternalUtils.getTags(Tags.getTagger().getCurrentTagContext())
-                .forEachRemaining(t -> result.put(t.getKey().getName(), t.getValue().asString()));
+        Map<String, String> result = new HashMap<>();
+        Baggage.current().forEach((s, baggageEntry) -> result.put(s, baggageEntry.getValue()));
         return result;
     }
 
@@ -57,7 +58,7 @@ public class InspectitContextImplTest extends SpringTestBase {
 
         @Test
         void verifyCleared() {
-            SpanContext span = Tracing.getTracer().spanBuilder("blub").startSpan().getContext();
+            SpanContext span = OpenTelemetryUtils.getTracer().spanBuilder("blub").startSpan().getSpanContext();
             InspectitContextImpl ctx = InspectitContextImpl.createFromCurrent(new HashMap<>(), propagation, false);
             ctx.setData(InternalInspectitContext.REMOTE_PARENT_SPAN_CONTEXT_KEY, span);
 
@@ -88,22 +89,22 @@ public class InspectitContextImplTest extends SpringTestBase {
 
         @Test
         void spanEntered() {
-            Span mySpan = Tracing.getTracer().spanBuilder("blub").startSpan();
+            Span mySpan = OpenTelemetryUtils.getTracer().spanBuilder("blub").startSpan();
 
             InspectitContextImpl ctx = InspectitContextImpl.createFromCurrent(new HashMap<>(), propagation, false);
             assertThat(ctx.hasEnteredSpan()).isFalse();
 
-            Scope scope = Tracing.getTracer().withSpan(mySpan);
+            Scope scope = Context.current().with(mySpan).makeCurrent();
             ctx.setSpanScope(scope);
 
             ctx.makeActive();
 
             assertThat(ctx.hasEnteredSpan()).isTrue();
-            assertThat(Tracing.getTracer().getCurrentSpan()).isSameAs(mySpan);
+            assertThat(Span.current()).isSameAs(mySpan);
 
             ctx.close();
 
-            assertThat(Tracing.getTracer().getCurrentSpan()).isNotSameAs(mySpan);
+            assertThat(Span.current()).isNotSameAs(mySpan);
         }
 
     }
@@ -596,10 +597,8 @@ public class InspectitContextImplTest extends SpringTestBase {
         void verifyTagsExtractedOnRoot() {
             doAnswer((invocation) -> PropagationMetaData.builder()).when(propagation).copy();
 
-            TagContextBuilder tcb = Tags.getTagger()
-                    .emptyBuilder()
-                    .putLocal(TagKey.create("myTag"), TagValue.create("myValue"));
-            try (Scope tc = tcb.buildScoped()) {
+            BaggageBuilder tcb = Baggage.builder().put("myTag", "myValue");
+            try (Scope tc = tcb.build().makeCurrent()) {
                 InspectitContextImpl ctxA = InspectitContextImpl.createFromCurrent(Collections.emptyMap(), propagation, true);
                 assertThat(ctxA.getData("myTag")).isEqualTo("myValue");
 
@@ -618,10 +617,9 @@ public class InspectitContextImplTest extends SpringTestBase {
         void verifyTagPropagationPreservedOnRoot() {
             doAnswer((invocation) -> PropagationMetaData.builder()).when(propagation).copy();
 
-            TagContextBuilder tcb = Tags.getTagger()
-                    .emptyBuilder()
-                    .putLocal(TagKey.create("myTag"), TagValue.create("myValue"));
-            try (Scope tc = tcb.buildScoped()) {
+            BaggageBuilder tcb = Baggage.builder().put("myTag", "myValue");
+
+            try (Scope tc = tcb.build().makeCurrent()) {
                 InspectitContextImpl ctxA = InspectitContextImpl.createFromCurrent(Collections.emptyMap(), propagation, true);
                 ctxA.makeActive();
 
@@ -651,10 +649,8 @@ public class InspectitContextImplTest extends SpringTestBase {
 
             root.makeActive();
 
-            TagContextBuilder tcb = Tags.getTagger()
-                    .emptyBuilder()
-                    .putLocal(TagKey.create("myTag"), TagValue.create("myValue"));
-            try (Scope tc = tcb.buildScoped()) {
+            BaggageBuilder tcb = Baggage.builder().put("myTag", "myValue");
+            try (Scope tc = tcb.build().makeCurrent()) {
                 InspectitContextImpl ctxA = InspectitContextImpl.createFromCurrent(Collections.emptyMap(), propagation, true);
                 assertThat(ctxA.getData("myTag")).isEqualTo("myValue");
 
@@ -683,10 +679,8 @@ public class InspectitContextImplTest extends SpringTestBase {
 
             root.makeActive();
 
-            TagContextBuilder tcb = Tags.getTagger()
-                    .emptyBuilder()
-                    .putLocal(TagKey.create("myTag"), TagValue.create("myValue"));
-            try (Scope tc = tcb.buildScoped()) {
+            BaggageBuilder tcb = Baggage.builder().put("myTag", "myValue");
+            try (Scope tc = tcb.build().makeCurrent()) {
                 InspectitContextImpl ctxA = InspectitContextImpl.createFromCurrent(Collections.emptyMap(), propagation, true);
                 ctxA.makeActive();
 
@@ -716,10 +710,8 @@ public class InspectitContextImplTest extends SpringTestBase {
             InspectitContextImpl root = InspectitContextImpl.createFromCurrent(Collections.emptyMap(), propagation, true);
             root.makeActive();
 
-            TagContextBuilder tcb = Tags.getTagger()
-                    .emptyBuilder()
-                    .putLocal(TagKey.create("myTag"), TagValue.create("myValue"));
-            try (Scope tc = tcb.buildScoped()) {
+            BaggageBuilder tcb = Baggage.builder().put("myTag", "myValue");
+            try (Scope tc = tcb.build().makeCurrent()) {
                 InspectitContextImpl ctxA = InspectitContextImpl.createFromCurrent(Collections.emptyMap(), propagation, true);
                 ctxA.setData("rootKey", "childValue");
                 ctxA.makeActive();
@@ -769,10 +761,8 @@ public class InspectitContextImplTest extends SpringTestBase {
 
             root.makeActive();
 
-            TagContextBuilder tcb = Tags.getTagger()
-                    .currentBuilder()
-                    .putLocal(TagKey.create("myTag"), TagValue.create("myValue"));
-            try (Scope tc = tcb.buildScoped()) {
+            BaggageBuilder tcb = Baggage.current().toBuilder().put("myTag", "myValue");
+            try (Scope tc = tcb.build().makeCurrent()) {
 
                 Map<String, String> currentTagsAsMap = getCurrentTagsAsMap();
                 assertThat(currentTagsAsMap).containsEntry("longKey", "42");
@@ -923,14 +913,14 @@ public class InspectitContextImplTest extends SpringTestBase {
         @Test
         void verifySpanAttachedAndDetached() {
             InspectitContextImpl ctx = InspectitContextImpl.createFromCurrent(Collections.emptyMap(), propagation, true);
-            Span sp = Tracing.getTracer().spanBuilder("blub").startSpan();
-            ctx.setSpanScope(Tracing.getTracer().withSpan(sp));
+            Span sp = OpenTelemetryUtils.getTracer().spanBuilder("blub").startSpan();
+            ctx.setSpanScope(Context.current().with(sp).makeCurrent());
             ctx.makeActive();
 
-            Span span = Tracing.getTracer().getCurrentSpan();
+            Span span = Span.current();
 
             ctx.close();
-            Span endSpan = Tracing.getTracer().getCurrentSpan();
+            Span endSpan = Span.current();
 
             assertThat(span).isSameAs(sp);
             assertThat(endSpan).isNotSameAs(sp);

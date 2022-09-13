@@ -4,15 +4,9 @@ import de.flapdoodle.embed.process.runtime.Network;
 import io.apisense.embed.influx.InfluxServer;
 import io.apisense.embed.influx.configuration.InfluxConfigurationWriter;
 import io.github.netmikey.logunit.api.LogCapturer;
-import io.opencensus.common.Scope;
-import io.opencensus.stats.*;
-import io.opencensus.tags.TagKey;
-import io.opencensus.tags.TagValue;
-import io.opencensus.tags.Tags;
 import org.influxdb.InfluxDB;
 import org.influxdb.InfluxDBFactory;
 import org.influxdb.InfluxDBIOException;
-import org.influxdb.dto.Pong;
 import org.influxdb.dto.Query;
 import org.influxdb.dto.QueryResult;
 import org.junit.jupiter.api.AfterEach;
@@ -22,7 +16,6 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.test.annotation.DirtiesContext;
 import rocks.inspectit.ocelot.core.SpringTestBase;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -73,21 +66,8 @@ public class InfluxExporterServiceIntTest extends SpringTestBase {
             props.setProperty("inspectit.exporters.metrics.influx.password", password);
         });
 
-        TagKey testTag = TagKey.create("my_tag");
-        Measure.MeasureDouble testMeasure = Measure.MeasureDouble.create("my/test/measure", "foo", "bars");
-        View testView = View.create(View.Name.create("my/test/measure/cool%data"), "", testMeasure, Aggregation.Sum.create(), Arrays
-                .asList(testTag));
-        Stats.getViewManager().registerView(testView);
-
-        try (Scope tc = Tags.getTagger().emptyBuilder().putLocal(testTag, TagValue.create("myval")).buildScoped()) {
-            MeasureMap mm = Stats.getStatsRecorder().newMeasureMap();
-            mm.put(testMeasure, 20.0);
-            mm.record();
-
-            mm = Stats.getStatsRecorder().newMeasureMap();
-            mm.put(testMeasure, 22.0);
-            mm.record();
-        }
+        recordMetricsAndFlush(20, "my_tag", ",myval");
+        recordMetricsAndFlush(22, "my_tag", ",myval");
 
         await().atMost(30, TimeUnit.SECONDS).untilAsserted(() -> {
             try {

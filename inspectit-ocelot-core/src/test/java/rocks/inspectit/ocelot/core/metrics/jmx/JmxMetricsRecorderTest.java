@@ -1,7 +1,8 @@
 package rocks.inspectit.ocelot.core.metrics.jmx;
 
-import io.opencensus.stats.Measure;
-import io.opencensus.tags.*;
+import io.opentelemetry.api.baggage.Baggage;
+import io.opentelemetry.api.baggage.BaggageBuilder;
+import io.opentelemetry.sdk.metrics.internal.state.SdkObservableMeasurement;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -27,13 +28,13 @@ class JmxMetricsRecorderTest {
     JmxMetricsRecorder jmxMetricsRecorder;
 
     @Mock
-    Tagger tagger;
-
-    @Mock
     MeasuresAndViewsManager measuresManager;
 
     @Mock
     CommonTagsManager commonTagsManager;
+
+    @Mock
+    Baggage tagger;
 
     @BeforeEach
     public void initMocks() {
@@ -44,87 +45,90 @@ class JmxMetricsRecorderTest {
     class RecordBean {
 
         @Mock
-        Measure.MeasureDouble measureDoubleMock;
+        SdkObservableMeasurement measureDoubleMock;
 
         @Captor
         ArgumentCaptor<MetricDefinitionSettings> definitionCaptor;
 
         @Test
         public void valueBasic() {
-            TagContextBuilder tagContextBuilder = Tags.getTagger().emptyBuilder();
+            BaggageBuilder tagContextBuilder = Baggage.builder();
             double value = 1.2565;
             String expectedMeasureName = "jvm/jmx/my/domain/att";
             when(measuresManager.getMeasureDouble(expectedMeasureName)).thenReturn(Optional.of(measureDoubleMock));
-            when(measureDoubleMock.getName()).thenReturn(expectedMeasureName);
-            when(tagger.currentBuilder()).thenReturn(tagContextBuilder);
+            when(measureDoubleMock.getInstrumentationScopeInfo().getName()).thenReturn(expectedMeasureName);
+            when(Baggage.current().toBuilder()).thenReturn(tagContextBuilder);
 
             jmxMetricsRecorder.recordBean("my.domain", new LinkedHashMap<>(), new LinkedList<>(), "att", null, "desc", value);
 
-            TagContext tagContext = tagContextBuilder.build();
-            assertThat(InternalUtils.getTags(tagContext)).isEmpty();
+            Baggage tagContext = tagContextBuilder.build();
+            assertThat(tagContext.isEmpty()).isTrue();
 
             verify(measuresManager).getMeasureDouble(expectedMeasureName);
-            verify(tagger).currentBuilder();
             verify(measuresManager).tryRecordingMeasurement(expectedMeasureName, value, tagContext);
-            verifyNoMoreInteractions(measuresManager, commonTagsManager, tagger);
+            verifyNoMoreInteractions(measuresManager, commonTagsManager);
+
         }
 
         @Test
         public void valueBasicBooleanTrue() {
-            TagContextBuilder tagContextBuilder = Tags.getTagger().emptyBuilder();
+            BaggageBuilder tagContextBuilder = Baggage.builder();
             String expectedMeasureName = "jvm/jmx/my/domain/attbool";
             when(measuresManager.getMeasureDouble(expectedMeasureName)).thenReturn(Optional.of(measureDoubleMock));
-            when(measureDoubleMock.getName()).thenReturn(expectedMeasureName);
-            when(tagger.currentBuilder()).thenReturn(tagContextBuilder);
+            //FIXME
+            // when(measureDoubleMock.getName()).thenReturn(expectedMeasureName);
+            when(tagger.toBuilder()).thenReturn(tagContextBuilder);
 
             jmxMetricsRecorder.recordBean("my.domain", new LinkedHashMap<>(), new LinkedList<>(), "attbool", null, "desc", Boolean.TRUE);
 
-            TagContext tagContext = tagContextBuilder.build();
-            assertThat(InternalUtils.getTags(tagContext)).isEmpty();
+            Baggage tagContext = tagContextBuilder.build();
+            assertThat(tagContext.isEmpty()).isTrue();
 
             verify(measuresManager).getMeasureDouble(expectedMeasureName);
-            verify(tagger).currentBuilder();
+            verify(tagger).toBuilder();
             verify(measuresManager).tryRecordingMeasurement(expectedMeasureName, 1d, tagContext);
             verifyNoMoreInteractions(measuresManager, commonTagsManager, tagger);
         }
 
         @Test
         public void valueBasicBooleanFalse() {
-            TagContextBuilder tagContextBuilder = Tags.getTagger().emptyBuilder();
+            BaggageBuilder tagContextBuilder = Baggage.builder();
             String expectedMeasureName = "jvm/jmx/my/domain/attbool";
             when(measuresManager.getMeasureDouble(expectedMeasureName)).thenReturn(Optional.of(measureDoubleMock));
-            when(measureDoubleMock.getName()).thenReturn(expectedMeasureName);
-            when(tagger.currentBuilder()).thenReturn(tagContextBuilder);
+            //FIXME
+            // when(measureDoubleMock.getName()).thenReturn(expectedMeasureName);
+            when(tagger.toBuilder()).thenReturn(tagContextBuilder);
 
             jmxMetricsRecorder.recordBean("my.domain", new LinkedHashMap<>(), new LinkedList<>(), "attbool", null, "desc", Boolean.FALSE);
 
-            TagContext tagContext = tagContextBuilder.build();
-            assertThat(InternalUtils.getTags(tagContext)).isEmpty();
+            Baggage tagContext = tagContextBuilder.build();
+            assertThat(tagContext.isEmpty()).isTrue();
 
             verify(measuresManager).getMeasureDouble(expectedMeasureName);
-            verify(tagger).currentBuilder();
+            verify(tagger).toBuilder();
             verify(measuresManager).tryRecordingMeasurement(expectedMeasureName, 0d, tagContext);
             verifyNoMoreInteractions(measuresManager, commonTagsManager, tagger);
         }
 
         @Test
         public void valueBasicMeasureDoesNotExists() {
-            TagContextBuilder tagContextBuilder = Tags.getTagger().emptyBuilder();
+            BaggageBuilder tagContextBuilder = Baggage.builder();
             double value = 1.2565;
             String expectedMeasureName = "jvm/jmx/my/domain/att";
-            when(measureDoubleMock.getName()).thenReturn(expectedMeasureName);
+            //FIXME
+            // when(measureDoubleMock.getName()).thenReturn(expectedMeasureName);
             when(measuresManager.getMeasureDouble(expectedMeasureName)).thenReturn(Optional.empty())
                     .thenReturn(Optional.of(measureDoubleMock));
-            when(tagger.currentBuilder()).thenReturn(tagContextBuilder);
+            when(tagger.toBuilder()).thenReturn(tagContextBuilder);
 
             jmxMetricsRecorder.recordBean("my.domain", new LinkedHashMap<>(), new LinkedList<>(), "att", null, "desc", value);
 
-            TagContext tagContext = tagContextBuilder.build();
-            assertThat(InternalUtils.getTags(tagContext)).isEmpty();
+            Baggage tagContext = tagContextBuilder.build();
+            assertThat(tagContext.isEmpty()).isTrue();
 
             verify(measuresManager, times(2)).getMeasureDouble(expectedMeasureName);
             verify(measuresManager).addOrUpdateAndCacheMeasureWithViews(eq(expectedMeasureName), definitionCaptor.capture());
-            verify(tagger).currentBuilder();
+            verify(tagger).toBuilder();
             verify(measuresManager).tryRecordingMeasurement(expectedMeasureName, value, tagContext);
             verifyNoMoreInteractions(measuresManager, commonTagsManager, tagger);
 
@@ -142,7 +146,7 @@ class JmxMetricsRecorderTest {
 
         @Test
         public void valueComplex() {
-            TagContextBuilder tagContextBuilder = Tags.getTagger().emptyBuilder();
+            BaggageBuilder tagContextBuilder = Baggage.builder();
             double value = 1.2565;
             LinkedList<String> attributes = new LinkedList<>(Arrays.asList("key1", "key2"));
             LinkedHashMap<String, String> beanProps = new LinkedHashMap<>();
@@ -150,25 +154,22 @@ class JmxMetricsRecorderTest {
             beanProps.put("prop2", "Prop2Value");
             beanProps.put("prop3", "Prop3Value");
             String expectedMeasureName = "jvm/jmx/my/domain/Prop1Value/key1/key2/att";
-            when(measureDoubleMock.getName()).thenReturn(expectedMeasureName);
+            //FIXME
+            // when(measureDoubleMock.getName()).thenReturn(expectedMeasureName);
             when(measuresManager.getMeasureDouble(expectedMeasureName)).thenReturn(Optional.of(measureDoubleMock));
-            when(tagger.currentBuilder()).thenReturn(tagContextBuilder);
+            when(tagger.toBuilder()).thenReturn(tagContextBuilder);
 
             jmxMetricsRecorder.recordBean("my.domain", beanProps, attributes, "att", null, "desc", value);
 
-            TagContext tagContext = tagContextBuilder.build();
-            assertThat(InternalUtils.getTags(tagContext)).hasSize(2)
-                    .anySatisfy(tag -> {
-                        assertThat(tag.getKey().getName()).isEqualTo("prop2");
-                        assertThat(tag.getValue().asString()).isEqualTo("Prop2Value");
-                    })
-                    .anySatisfy(tag -> {
-                        assertThat(tag.getKey().getName()).isEqualTo("prop3");
-                        assertThat(tag.getValue().asString()).isEqualTo("Prop3Value");
-                    });
+            Baggage tagContext = tagContextBuilder.build();
+            assertThat(tagContext.asMap()).hasSize(2).hasEntrySatisfying("prop2", tag -> {
+                assertThat(tag.getValue()).isEqualTo("Prop2Value");
+            }).hasEntrySatisfying("prop3", tag -> {
+                assertThat(tag.getValue()).isEqualTo("Prop3Value");
+            });
 
             verify(measuresManager).getMeasureDouble(expectedMeasureName);
-            verify(tagger).currentBuilder();
+            verify(tagger).toBuilder();
             verify(measuresManager).tryRecordingMeasurement(expectedMeasureName, value, tagContext);
             verifyNoMoreInteractions(measuresManager, commonTagsManager, tagger);
         }
@@ -222,10 +223,8 @@ class JmxMetricsRecorderTest {
             scraper.doScrape();
 
             verify(receiver, atLeastOnce()).recordBean(eq("java.lang"), beanPropsCaptor.capture(), notNull(), notNull(), notNull(), notNull(), notNull());
-            assertThat(beanPropsCaptor.getAllValues()).allSatisfy(map -> assertThat(map)
-                    .hasSize(1)
-                    .containsEntry("type", "ClassLoading")
-            );
+            assertThat(beanPropsCaptor.getAllValues()).allSatisfy(map -> assertThat(map).hasSize(1)
+                    .containsEntry("type", "ClassLoading"));
         }
 
         @Test
@@ -250,11 +249,14 @@ class JmxMetricsRecorderTest {
             scraper.doScrape();
 
             verify(receiver, atLeastOnce()).recordBean(eq("java.lang"), beanPropsCaptor.capture(), notNull(), notNull(), notNull(), notNull(), notNull());
-            assertThat(beanPropsCaptor.getAllValues()).allSatisfy(map -> assertThat(map)
-                    .doesNotContainEntry("type", "Runtime")
-            );
+            assertThat(beanPropsCaptor.getAllValues()).allSatisfy(map -> assertThat(map).doesNotContainEntry("type", "Runtime"));
         }
 
+    }
+
+    @Test
+    void fixMe() {
+        assertThat("this-file-needs-to-be-fixed").isEqualTo("yes");
     }
 
 }

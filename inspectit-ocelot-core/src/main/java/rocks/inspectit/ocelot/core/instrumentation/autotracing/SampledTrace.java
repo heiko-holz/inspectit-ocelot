@@ -1,10 +1,8 @@
 package rocks.inspectit.ocelot.core.instrumentation.autotracing;
 
 import com.google.common.annotations.VisibleForTesting;
-import io.opencensus.implcore.internal.TimestampConverter;
-import io.opencensus.implcore.trace.RecordEventsSpanImpl;
-import io.opencensus.trace.AttributeValue;
-import io.opencensus.trace.Span;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.Span;
 import rocks.inspectit.ocelot.core.instrumentation.autotracing.events.MethodEntryEvent;
 import rocks.inspectit.ocelot.core.instrumentation.autotracing.events.MethodExitEvent;
 import rocks.inspectit.ocelot.core.instrumentation.autotracing.events.StackTraceSampledEvent;
@@ -202,10 +200,10 @@ public class SampledTrace {
                         .customTiming(invoc.getStart().getTimestamp(), invoc.getEnd()
                                 .getTimestamp(), getTimestampConverter())
                         .startSpan();
-                span.putAttribute("java.sampled", AttributeValue.booleanAttributeValue(true));
-                span.putAttribute("java.fqn", AttributeValue.stringAttributeValue(getFullName(invoc.getSampledMethod())));
+                span.setAttribute(AttributeKey.booleanKey("java.sampled"), true);
+                span.setAttribute(AttributeKey.stringKey("java.fqn"), getFullName(invoc.getSampledMethod()));
                 addHiddenParentsAttribute(span, invoc);
-                span.end();
+                span.end();//invoc.getEnd().getTimestamp(), TimeUnit.NANOSECONDS);
             } else {
                 span = parentSpan;
             }
@@ -227,12 +225,12 @@ public class SampledTrace {
             String parents = hiddenParents.stream()
                     .map(inv -> inv.getSampledMethod().toString())
                     .collect(Collectors.joining("\n"));
-            span.putAttribute("java.hidden_parents", AttributeValue.stringAttributeValue(parents));
+            span.setAttribute(AttributeKey.stringKey("java.hidden_parents"), parents);
         }
     }
 
-    private TimestampConverter getTimestampConverter() {
-        return CustomSpanBuilder.getTimestampConverter((RecordEventsSpanImpl) rootSpan);
+    private Object getTimestampConverter() {
+        return CustomSpanBuilder.getAnchoredClock(rootSpan);
     }
 
     private String getSimpleName(StackTraceElement element) {

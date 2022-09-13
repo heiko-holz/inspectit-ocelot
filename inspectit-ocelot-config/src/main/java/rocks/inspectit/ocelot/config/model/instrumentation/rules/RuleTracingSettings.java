@@ -1,6 +1,6 @@
 package rocks.inspectit.ocelot.config.model.instrumentation.rules;
 
-import io.opencensus.trace.Span;
+import io.opentelemetry.api.trace.SpanKind;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -96,7 +96,7 @@ public class RuleTracingSettings {
      * The kind of the span, e.g. SERVER or CLIENT.
      * Can be null, in which case it is a span of unspecified kind.
      */
-    private Span.Kind kind;
+    private SpanKind kind;
 
     /**
      * Maps names of span attributes to data keys.
@@ -114,31 +114,23 @@ public class RuleTracingSettings {
      * Defines conditions which make the start-span flag conditional.
      */
     @Builder.Default
-    @Valid
-    @NotNull
-    ConditionalActionSettings startSpanConditions = new ConditionalActionSettings();
+    @Valid @NotNull ConditionalActionSettings startSpanConditions = new ConditionalActionSettings();
 
     /**
      * Defines conditions which make the end-span flag conditional.
      */
     @Builder.Default
-    @Valid
-    @NotNull
-    ConditionalActionSettings endSpanConditions = new ConditionalActionSettings();
+    @Valid @NotNull ConditionalActionSettings endSpanConditions = new ConditionalActionSettings();
 
     /**
      * Defines conditions which make the continue-span flag conditional.
      */
     @Builder.Default
-    @Valid
-    @NotNull
-    ConditionalActionSettings continueSpanConditions = new ConditionalActionSettings();
+    @Valid @NotNull ConditionalActionSettings continueSpanConditions = new ConditionalActionSettings();
 
     /**
      * Defines conditions which make the attribute definitions conditional.
      */
     @Builder.Default
-    @Valid
-    @NotNull
-    ConditionalActionSettings attributeConditions = new ConditionalActionSettings();
+    @Valid @NotNull ConditionalActionSettings attributeConditions = new ConditionalActionSettings();
 }

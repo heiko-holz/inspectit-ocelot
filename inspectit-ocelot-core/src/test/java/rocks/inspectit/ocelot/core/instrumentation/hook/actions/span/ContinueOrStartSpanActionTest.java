@@ -1,7 +1,6 @@
 package rocks.inspectit.ocelot.core.instrumentation.hook.actions.span;
 
-import io.opencensus.trace.Sampler;
-import io.opencensus.trace.samplers.Samplers;
+import io.opentelemetry.sdk.trace.samplers.Sampler;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,9 +25,7 @@ public class ContinueOrStartSpanActionTest {
 
         @Test
         void noSampler() {
-            Sampler result = ContinueOrStartSpanAction.builder()
-                    .build()
-                    .getSampler(context);
+            Sampler result = ContinueOrStartSpanAction.builder().build().getSampler(context);
 
             assertThat(result).isNull();
             verifyNoMoreInteractions(context);
@@ -36,17 +33,13 @@ public class ContinueOrStartSpanActionTest {
 
         @Test
         void staticSampler() {
-            Sampler sampler = Samplers.probabilitySampler(0.5);
+            Sampler sampler = Sampler.traceIdRatioBased(0.5);
 
-            Sampler result = ContinueOrStartSpanAction.builder()
-                    .staticSampler(sampler)
-                    .build()
-                    .getSampler(context);
+            Sampler result = ContinueOrStartSpanAction.builder().staticSampler(sampler).build().getSampler(context);
 
             assertThat(result).isSameAs(sampler);
             verifyNoMoreInteractions(context);
         }
-
 
         @Test
         void dynamicNonNullProbability() {
@@ -58,12 +51,11 @@ public class ContinueOrStartSpanActionTest {
                     .build()
                     .getSampler(context);
 
-            Object configuredProbability = ReflectionTestUtils.invokeMethod(result, "getProbability");
+            Object configuredProbability = ((Long) ReflectionTestUtils.invokeMethod(result, "getIdUpperBound")).doubleValue() / Long.MAX_VALUE;
             assertThat((Double) configuredProbability).isEqualTo(0.42);
             verify(dynamicProbability).get(any());
             verifyNoMoreInteractions(context);
         }
-
 
         @Test
         void dynamicNullProbability() {

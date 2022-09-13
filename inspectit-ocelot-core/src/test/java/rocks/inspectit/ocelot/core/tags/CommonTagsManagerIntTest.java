@@ -1,9 +1,6 @@
 package rocks.inspectit.ocelot.core.tags;
 
-import io.opencensus.tags.InternalUtils;
-import io.opencensus.tags.TagContext;
-import io.opencensus.tags.TagKey;
-import io.opencensus.tags.TagValue;
+import io.opentelemetry.api.baggage.Baggage;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,17 +22,16 @@ class CommonTagsManagerIntTest {
         CommonTagsManager provider;
 
         public void contextAvailable() {
-            TagContext commonTagContext = provider.getCommonTagContext();
+            Baggage commonTagContext = provider.getCommonBaggage();
 
-            assertThat(InternalUtils.getTags(commonTagContext)).isNotEmpty();
+            assertThat(commonTagContext.isEmpty()).isFalse();
         }
 
         public void tagKeysCorrect() {
-            TagContext commonTagContext = provider.getCommonTagContext();
-            List<TagKey> commonTagKeys = provider.getCommonTagKeys();
+            Baggage commonTagContext = provider.getCommonBaggage();
+            List<String> commonTagKeys = provider.getCommonTagKeys();
 
-            assertThat(InternalUtils.getTags(commonTagContext))
-                    .allSatisfy(tag -> assertThat(commonTagKeys.contains(tag.getKey())).isTrue());
+            assertThat(commonTagContext.asMap()).allSatisfy((key, baggageEntry) -> assertThat(commonTagKeys.contains(key)).isTrue());
         }
 
         public void scopeAvailable() {
@@ -43,12 +39,9 @@ class CommonTagsManagerIntTest {
         }
     }
 
-
     @Nested
     @DirtiesContext
-    @TestPropertySource(properties = {
-            "inspectit.tags.extra.service-name=my-service-name"
-    })
+    @TestPropertySource(properties = {"inspectit.tags.extra.service-name=my-service-name"})
     class PriorityRespected extends SpringTestBase {
 
         @Autowired
@@ -56,21 +49,14 @@ class CommonTagsManagerIntTest {
 
         @Test
         public void extraOverwritesProviders() {
-            TagContext commonTagContext = provider.getCommonTagContext();
-
-            assertThat(InternalUtils.getTags(commonTagContext))
-                    .anySatisfy(tag -> {
-                        assertThat(tag.getKey()).isEqualTo(TagKey.create("service-name"));
-                        assertThat(tag.getValue()).isEqualTo(TagValue.create("my-service-name"));
-                    });
+            Baggage commonTagContext = provider.getCommonBaggage();
+            assertThat(commonTagContext.asMap()).hasEntrySatisfying("service-name", baggageEntry -> assertThat(baggageEntry.getValue()).isEqualTo("my-service-name"));
         }
     }
 
     @Nested
     @DirtiesContext
-    @TestPropertySource(properties = {
-            "inspectit.tags.extra.service-name=my-service-name"
-    })
+    @TestPropertySource(properties = {"inspectit.tags.extra.service-name=my-service-name"})
     class Updates extends SpringTestBase {
 
         @Autowired
@@ -78,33 +64,21 @@ class CommonTagsManagerIntTest {
 
         @Test
         public void extraOverwritesProviders() {
-            updateProperties(
-                    properties -> properties
-                            .withProperty("inspectit.tags.providers.environment.resolve-host-address", Boolean.FALSE)
-                            .withProperty("inspectit.tags.providers.environment.resolve-host-name", Boolean.FALSE)
-                            .withProperty("inspectit.service-name", "some-service-name")
-                            .withProperty("inspectit.tags.extra.service-name", "my-service-name")
-            );
+            updateProperties(properties -> properties.withProperty("inspectit.tags.providers.environment.resolve-host-address", Boolean.FALSE)
+                    .withProperty("inspectit.tags.providers.environment.resolve-host-name", Boolean.FALSE)
+                    .withProperty("inspectit.service-name", "some-service-name")
+                    .withProperty("inspectit.tags.extra.service-name", "my-service-name"));
 
-            TagContext commonTagContext = provider.getCommonTagContext();
+            Baggage commonTagContext = provider.getCommonBaggage();
 
-            assertThat(InternalUtils.getTags(commonTagContext))
-                    .anySatisfy(tag -> {
-                        assertThat(tag.getKey()).isEqualTo(TagKey.create("service-name"));
-                        assertThat(tag.getValue()).isEqualTo(TagValue.create("my-service-name"));
-                    })
-                    .allSatisfy(tag -> {
-                        assertThat(tag.getKey()).isNotIn("host", "host-address");
-                    });
+            assertThat(commonTagContext.asMap()).hasEntrySatisfying("service-name", baggageEntry -> assertThat(baggageEntry.getValue()).isEqualTo("my-service-name"))
+                    .allSatisfy((s, baggageEntry) -> assertThat(s).isNotIn("host", "host-address"));
         }
     }
 
     @Nested
     @DirtiesContext
-    @TestPropertySource(properties = {
-            "inspectit.tags.extra.service-name=this-value-is-over-255-characters-long ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
-            "inspectit.tags.extra.service-name2=non-printable-character-\u007f"
-    })
+    @TestPropertySource(properties = {"inspectit.tags.extra.service-name=this-value-is-over-255-characters-long ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------", "inspectit.tags.extra.service-name2=non-printable-character-\u007f"})
     class VeryLongTagValues extends SpringTestBase {
 
         @Autowired
@@ -112,13 +86,10 @@ class CommonTagsManagerIntTest {
 
         @Test
         public void extraOverwritesProviders() {
-            TagContext commonTagContext = provider.getCommonTagContext();
+            Baggage commonTagContext = provider.getCommonBaggage();
 
-            assertThat(InternalUtils.getTags(commonTagContext))
-                    .anySatisfy(tag -> {
-                        assertThat(tag.getKey()).isEqualTo(TagKey.create("service-name"));
-                        assertThat(tag.getValue()).isEqualTo(TagValue.create("<invalid>"));
-                    });
+            assertThat(commonTagContext.asMap()).hasEntrySatisfying("service-name", baggageEntry -> assertThat(baggageEntry.getValue()).isEqualTo("<invalid>"));
+
         }
     }
 

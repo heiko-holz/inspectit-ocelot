@@ -1,18 +1,16 @@
 package rocks.inspectit.ocelot.instrumentation.special;
 
-import io.opencensus.common.Scope;
-import io.opencensus.tags.*;
-import org.apache.logging.log4j.core.tools.picocli.CommandLine;
+import io.opentelemetry.api.baggage.Baggage;
+import io.opentelemetry.api.baggage.BaggageEntry;
+import io.opentelemetry.context.Scope;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import rocks.inspectit.ocelot.bootstrap.Instances;
 import rocks.inspectit.ocelot.instrumentation.InstrumentationSysTestBase;
 import rocks.inspectit.ocelot.utils.TestUtils;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -20,8 +18,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 public class ThreadStartContextPropagationTest extends InstrumentationSysTestBase {
-
-    private static final Tagger tagger = Tags.getTagger();
 
     /**
      * Abstract thread class.
@@ -61,26 +57,23 @@ public class ThreadStartContextPropagationTest extends InstrumentationSysTestBas
     @Test
     public void verifyContextPropagationViaAbstractThreads() throws InterruptedException {
         long rand = System.nanoTime();
-        TagKey tagKey = TagKey.create("test-tag-key-" + rand);
-        TagValue tagValue = TagValue.create("test-tag-value-" + rand);
+        String tagKey = "test-tag-key-" + rand;
+        String tagValue = "test-tag-value-" + rand;
         CountDownLatch latch = new CountDownLatch(1);
-        AtomicReference<Iterator<Tag>> refTags = new AtomicReference<>();
+        AtomicReference<Map<String, BaggageEntry>> refTags = new AtomicReference<>();
 
         Thread thread = new SubThread(() -> {
-            Iterator<Tag> iter = InternalUtils.getTags(tagger.getCurrentTagContext());
-            refTags.set(iter);
+            refTags.set(Baggage.current().asMap());
             latch.countDown();
         });
 
-        try (Scope s = tagger.currentBuilder().putLocal(tagKey, tagValue).buildScoped()) {
+        try (Scope s = Baggage.current().toBuilder().put(tagKey, tagValue).build().makeCurrent()) {
             thread.start();
         }
 
         latch.await(5, TimeUnit.SECONDS);
 
-        assertThat(refTags.get()).hasSize(1)
-                .extracting("key", "value")
-                .contains(tuple(tagKey, tagValue));
+        assertThat(refTags.get()).hasSize(1).extracting("key", "value").contains(tuple(tagKey, tagValue));
     }
 
     @Test
@@ -102,9 +95,7 @@ public class ThreadStartContextPropagationTest extends InstrumentationSysTestBas
 
         latch.await(5, TimeUnit.SECONDS);
 
-        assertThat(refTags.get()).hasSize(1)
-                .extracting("key", "value")
-                .contains(tuple(tagKey, tagValue));
+        assertThat(refTags.get()).hasSize(1).extracting("key", "value").contains(tuple(tagKey, tagValue));
     }
 
     @Test
@@ -131,9 +122,7 @@ public class ThreadStartContextPropagationTest extends InstrumentationSysTestBas
 
         latch.await(5, TimeUnit.SECONDS);
 
-        assertThat(refTags.get()).hasSize(1)
-                .extracting("key", "value")
-                .contains(tuple(tagKey, tagValue));
+        assertThat(refTags.get()).hasSize(1).extracting("key", "value").contains(tuple(tagKey, tagValue));
     }
 
     @Test
@@ -179,9 +168,7 @@ public class ThreadStartContextPropagationTest extends InstrumentationSysTestBas
         Future<?> taskFuture = executorService.submit(runnableSecond); // have to be empty!
         taskFuture.get();
 
-        assertThat(refTagsInner.get()).hasSize(1)
-                .extracting("key", "value")
-                .contains(tuple(tagKey, tagValue));
+        assertThat(refTagsInner.get()).hasSize(1).extracting("key", "value").contains(tuple(tagKey, tagValue));
         assertThat(refTagsOuter.get()).isEmpty();
     }
 }

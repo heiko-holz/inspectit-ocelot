@@ -48,10 +48,21 @@ public interface IOpenTelemetryController {
     void notifyMetricsSettingsChanged();
 
     /**
+     * Notifies the {@link IOpenTelemetryController} that {@link MetricProducer} were registered or unregistered.
+     */
+    void notifyMetricProducersChanged();
+
+    /**
+     * Notifies the {@link IOpenTelemetryController} that {@link View} were registered or unregistered.
+     */
+    void notifyViewsChanged();
+
+    /**
      * Returns the name of this {@link IOpenTelemetryController}
+     *
      * @return The name of this {@link IOpenTelemetryController}
      */
-    default String getName(){
+    default String getName() {
         return getClass().getSimpleName();
     }
 }

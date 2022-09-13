@@ -1,6 +1,6 @@
 package rocks.inspectit.ocelot.core.instrumentation.autotracing;
 
-import io.opencensus.trace.Span;
+import io.opentelemetry.api.trace.Span;
 import lombok.Getter;
 import rocks.inspectit.ocelot.core.instrumentation.autotracing.events.TraceEvent;
 
@@ -8,7 +8,7 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 /**
- * After a trace is reconstructed from a lsit of {@link TraceEvent},
+ * After a trace is reconstructed from a list of {@link TraceEvent},
  * the individual method calls are represented by an {@link Invocation} each.
  * <p>
  * Afterwards, only a subset of {@link Invocation} are exported as actual spans,

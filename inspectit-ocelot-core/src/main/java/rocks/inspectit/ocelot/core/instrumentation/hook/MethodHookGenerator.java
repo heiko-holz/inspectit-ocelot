@@ -1,8 +1,7 @@
 package rocks.inspectit.ocelot.core.instrumentation.hook;
 
 import com.google.common.annotations.VisibleForTesting;
-import io.opencensus.trace.Sampler;
-import io.opencensus.trace.samplers.Samplers;
+import io.opentelemetry.sdk.trace.samplers.Sampler;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
 import net.bytebuddy.description.method.MethodDescription;
@@ -175,7 +174,7 @@ public class MethodHookGenerator {
         if (!StringUtils.isBlank(sampleProbability)) {
             try {
                 double constantProbability = Double.parseDouble(sampleProbability);
-                Sampler sampler = Samplers.probabilitySampler(Math.max(0.0, Math.min(1.0, constantProbability)));
+                Sampler sampler = Sampler.traceIdRatioBased(Math.max(0.0, Math.min(1.0, constantProbability)));
                 actionBuilder.staticSampler(sampler);
             } catch (NumberFormatException e) {
                 VariableAccessor probabilityAccessor = variableAccessorFactory.getVariableAccessor(sampleProbability);

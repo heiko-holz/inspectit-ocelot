@@ -1,9 +1,6 @@
 package rocks.inspectit.ocelot.core.selfmonitoring;
 
-import io.opencensus.common.Scope;
-import io.opencensus.stats.StatsRecorder;
-import io.opencensus.tags.TagKey;
-import io.opencensus.tags.Tags;
+import io.opentelemetry.context.Scope;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import lombok.val;
@@ -15,8 +12,8 @@ import rocks.inspectit.ocelot.config.model.selfmonitoring.SelfMonitoringSettings
 import rocks.inspectit.ocelot.core.config.InspectitConfigChangedEvent;
 import rocks.inspectit.ocelot.core.config.InspectitEnvironment;
 import rocks.inspectit.ocelot.core.metrics.MeasuresAndViewsManager;
+import rocks.inspectit.ocelot.core.tags.AttributesUtils;
 import rocks.inspectit.ocelot.core.tags.CommonTagsManager;
-import rocks.inspectit.ocelot.core.tags.TagUtils;
 
 import java.util.Collections;
 import java.util.Map;
@@ -30,13 +27,10 @@ public class SelfMonitoringService {
 
     private static final String DURATION_MEASURE_NAME = "duration";
 
-    private static final TagKey COMPONENT_TAG_KEY = TagKey.create("component-name");
+    private static final String COMPONENT_TAG_KEY = "component-name";
 
     @Autowired
     private InspectitEnvironment env;
-
-    @Autowired
-    private StatsRecorder statsRecorder;
 
     @Autowired
     private MeasuresAndViewsManager measureManager;
@@ -100,8 +94,9 @@ public class SelfMonitoringService {
             String fullMeasureName = METRICS_PREFIX + measureName;
             val measure = measureManager.getMeasureDouble(fullMeasureName);
             measure.ifPresent(m -> {
+
                 try (val ct = commonTags.withCommonTagScope()) {
-                    statsRecorder.newMeasureMap().put(m, value).record();
+                    m.record(value, commonTags.getCommonAttributes());
                 }
             });
         }
@@ -135,7 +130,7 @@ public class SelfMonitoringService {
             val measure = measureManager.getMeasureLong(fullMeasureName);
             measure.ifPresent(m -> {
                 try (val ct = commonTags.withCommonTagScope(customTags)) {
-                    statsRecorder.newMeasureMap().put(m, value).record();
+                    m.record(value, commonTags.getCommonAttributes());
                 }
             });
         }
@@ -151,13 +146,23 @@ public class SelfMonitoringService {
         @Override
         public void close() {
             double durationInMicros = TimeUnit.NANOSECONDS.toMicros(System.nanoTime() - start);
-            val measure = measureManager.getMeasureDouble(METRICS_PREFIX + DURATION_MEASURE_NAME);
-            measure.ifPresent(m -> statsRecorder.newMeasureMap()
-                    .put(m, durationInMicros)
-                    .record(Tags.getTagger()
-                            .toBuilder(commonTags.getCommonTagContext())
-                            .putLocal(COMPONENT_TAG_KEY, TagUtils.createTagValue(COMPONENT_TAG_KEY.getName(), componentName))
+            String measureName = METRICS_PREFIX + DURATION_MEASURE_NAME;
+            val measure = measureManager.getMeasureDouble(measureName);
+            measure.ifPresent(m ->
+
+                    m.record(durationInMicros, commonTags.getCommonAttributes()
+                            .toBuilder()
+                            .put(COMPONENT_TAG_KEY, AttributesUtils.createAttributeValue(COMPONENT_TAG_KEY, componentName))
                             .build()));
+                    /*
+                    OpenTelemetryUtils.getMeter()
+                            .counterBuilder(measureName)
+                            .ofDoubles()
+                            .build()
+                            .add(durationInMicros, commonTags.getCommonAttributes().toBuilder().put(COMPONENT_TAG_KEY,
+                                    AttributesUtils.createAttributeValue(COMPONENT_TAG_KEY, componentName)).build());
+
+                     */
 
             if (log.isTraceEnabled()) {
                 log.trace(String.format("%s reported %.1f\u00B5s", componentName, durationInMicros));

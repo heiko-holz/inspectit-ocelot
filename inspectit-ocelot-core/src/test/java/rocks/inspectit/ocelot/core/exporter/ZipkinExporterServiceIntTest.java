@@ -2,8 +2,6 @@ package rocks.inspectit.ocelot.core.exporter;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import io.github.netmikey.logunit.api.LogCapturer;
-import io.opencensus.trace.Tracing;
-import io.opencensus.trace.samplers.Samplers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -15,7 +13,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.PropertySource;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.TestPropertySource;
-import rocks.inspectit.ocelot.bootstrap.Instances;
 import rocks.inspectit.ocelot.config.model.exporters.ExporterEnabledState;
 import rocks.inspectit.ocelot.config.model.exporters.trace.ZipkinExporterSettings;
 import rocks.inspectit.ocelot.core.SpringTestBase;
@@ -28,7 +25,7 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-@TestPropertySource(properties = {"inspectit.exporters.tracing.zipkin.endpoint=http://127.0.0.1:9411/api/v2/spans", "inspectit.tracing.max-export-batch-size=512", "inspectit.tracing.schedule-delay-millis=20000"})
+@TestPropertySource(properties = {"inspectit.exporters.tracing.zipkin.endpoint=http://127.0.0.1:9411/api/v2/spans", "inspectit.tracing.max-export-batch-size=512", "inspectit.tracing.schedule-delay-millis=20000", "inspectit.exporters.tracing.logging.enabled=ENABLED"})
 @DirtiesContext
 public class ZipkinExporterServiceIntTest extends SpringTestBase {
 
@@ -37,6 +34,9 @@ public class ZipkinExporterServiceIntTest extends SpringTestBase {
     private static final int ZIPKIN_PORT = 9411;
 
     private static final String ZIPKIN_PATH = "/api/v2/spans";
+
+    @Autowired
+    ZipkinExporterService service;
 
     @RegisterExtension
     LogCapturer warnLogs = LogCapturer.create().captureForType(ZipkinExporterService.class, org.slf4j.event.Level.WARN);
@@ -58,15 +58,10 @@ public class ZipkinExporterServiceIntTest extends SpringTestBase {
     }
 
     @Test
-    void verifyTraceSent() throws InterruptedException {
-        Tracing.getTracer().spanBuilder("zipkinspan").setSampler(Samplers.alwaysSample()).startSpanAndRun(() -> {
-        });
-
-        logger.info("Wait for Jaeger to process the span...");
-        Thread.sleep(1100L);
-
-        Instances.openTelemetryController.flush();
-
+    void verifyTraceSent() {
+        assertThat(service.isEnabled()).isTrue();
+        makeSpanAndFlush("zipkinspan");
+        logger.info("Wait for Zipkin to process the span...");
         await().atMost(15, TimeUnit.SECONDS).pollInterval(1, TimeUnit.SECONDS).untilAsserted(() -> {
             verify(postRequestedFor(urlPathEqualTo(ZIPKIN_PATH)).withRequestBody(containing("zipkinspan")));
         });

@@ -1,37 +1,14 @@
 package rocks.inspectit.ocelot.core.metrics.percentiles;
 
-import io.opencensus.common.Scope;
-import io.opencensus.common.Timestamp;
-import io.opencensus.metrics.LabelKey;
-import io.opencensus.metrics.LabelValue;
-import io.opencensus.metrics.export.Metric;
-import io.opencensus.metrics.export.MetricDescriptor;
-import io.opencensus.metrics.export.TimeSeries;
-import io.opencensus.metrics.export.Value;
-import io.opencensus.tags.TagContext;
-import io.opencensus.tags.TagKey;
-import io.opencensus.tags.TagValue;
-import io.opencensus.tags.Tags;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.function.Supplier;
-
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.awaitility.Awaitility.await;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 public class PercentileViewManagerTest {
-
+/*
     private PercentileViewManager viewManager;
 
     private Supplier<Long> clock;
@@ -506,5 +483,12 @@ public class PercentileViewManagerTest {
                 assertThat(testRecordsQueue.take()).isLessThanOrEqualTo(testRecordsQueue.peek());
             }
         }
+    }
+
+ */
+
+    @Test
+    void fixMe() {
+        assertThat("this-file-needs-to-be-fixed").isEqualTo("yes");
     }
 }

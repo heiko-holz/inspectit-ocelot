@@ -1,7 +1,6 @@
 package rocks.inspectit.ocelot.core.opentelemetry;
 
 import io.github.netmikey.logunit.api.LogCapturer;
-import io.opencensus.trace.Tracing;
 import io.opentelemetry.api.GlobalOpenTelemetry;
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.context.Scope;
@@ -18,13 +17,11 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
-import org.mockito.Mock;
 import org.springframework.beans.factory.annotation.Autowired;
 import rocks.inspectit.ocelot.config.model.exporters.ExporterEnabledState;
 import rocks.inspectit.ocelot.core.SLF4JBridgeHandlerUtils;
 import rocks.inspectit.ocelot.core.SpringTestBase;
 import rocks.inspectit.ocelot.core.exporter.LoggingTraceExporterService;
-import rocks.inspectit.ocelot.core.opentelemetry.trace.CustomIdGenerator;
 import rocks.inspectit.ocelot.core.utils.OpenTelemetryUtils;
 
 import java.io.IOException;
@@ -132,7 +129,7 @@ public class OpenTelemetryControllerImplIntTest extends SpringTestBase {
     }
 
     /**
-     * Verify that the {@link io.opencensus.trace.Tracer} in {@link Tracing#getTracer()} is correctly set to {@link GlobalOpenTelemetry#getTracerProvider()}
+     * Verify that the {@link io.opentelemetry.api.trace.Tracer} in {@link io.opentelemetry.api.OpenTelemetry#getTracer(String, String)} is correctly set to {@link GlobalOpenTelemetry#getTracerProvider()}
      *
      * @throws InterruptedException
      */
@@ -145,7 +142,7 @@ public class OpenTelemetryControllerImplIntTest extends SpringTestBase {
         });
         assertThat(loggingTraceExporterService.isEnabled()).isTrue();
         // make OC spans and flush
-        makeOCSpansAndFlush("test-span");
+        makeOtelSpansAndFlush("test-span");
         // verify the spans are logged
         Awaitility.waitAtMost(5, TimeUnit.SECONDS)
                 .pollInterval(1, TimeUnit.SECONDS)
@@ -158,7 +155,7 @@ public class OpenTelemetryControllerImplIntTest extends SpringTestBase {
         });
         assertThat(loggingTraceExporterService.isEnabled()).isFalse();
         // make OC spans and flush
-        makeOCSpansAndFlush("ignored-span");
+        makeOtelSpansAndFlush("ignored-span");
         // verify that no more spans are logged
         Thread.sleep(5000);
         assertThat(spanLogs.getEvents()).hasSize(1);
@@ -166,25 +163,14 @@ public class OpenTelemetryControllerImplIntTest extends SpringTestBase {
 
     private static void makeOtelSpansAndFlush(String spanName) {
         // build and flush span
-        Span span = GlobalOpenTelemetry.getTracerProvider()
+        Span span = OpenTelemetryUtils.getGlobalOpenTelemetry()
+                .getTracerProvider()
                 .get("rocks.inspectit.instrumentation.test")
                 .spanBuilder(spanName)
                 .startSpan();
         try (Scope scope = span.makeCurrent()) {
         } finally {
             span.end();
-        }
-        OpenTelemetryUtils.flush();
-    }
-
-    private static void makeOCSpansAndFlush(String spanName) {
-        // get OC tracer and start spans
-        io.opencensus.trace.Tracer tracer = Tracing.getTracer();
-
-        // start span
-        try (io.opencensus.common.Scope scope = tracer.spanBuilder(spanName).startScopedSpan()) {
-            io.opencensus.trace.Span span = tracer.getCurrentSpan();
-            span.addAnnotation("anno");
         }
         OpenTelemetryUtils.flush();
     }

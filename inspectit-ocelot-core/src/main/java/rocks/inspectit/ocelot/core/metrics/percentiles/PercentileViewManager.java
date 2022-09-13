@@ -1,14 +1,12 @@
 package rocks.inspectit.ocelot.core.metrics.percentiles;
 
 import com.google.common.annotations.VisibleForTesting;
-import io.opencensus.common.Timestamp;
-import io.opencensus.metrics.Metrics;
-import io.opencensus.metrics.export.Metric;
-import io.opencensus.metrics.export.MetricProducer;
-import io.opencensus.stats.MeasureMap;
-import io.opencensus.tags.TagContext;
-import io.opencensus.tags.Tags;
+import io.opentelemetry.api.baggage.Baggage;
+import io.opentelemetry.sdk.metrics.data.MetricData;
+import io.opentelemetry.sdk.metrics.internal.export.MetricProducer;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import rocks.inspectit.ocelot.core.opentelemetry.OpenTelemetryControllerImpl;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
@@ -68,15 +66,18 @@ public class PercentileViewManager {
         this.clock = clock;
     }
 
+    @Autowired
+    protected OpenTelemetryControllerImpl openTelemetryController;
+
     @PostConstruct
     void init() {
-        Metrics.getExportComponent().getMetricProducerManager().add(producer);
+        openTelemetryController.registerMetricProducer(producer);
     }
 
     @PreDestroy
     void destroy() {
         worker.destroy();
-        Metrics.getExportComponent().getMetricProducerManager().remove(producer);
+        openTelemetryController.unregisterMetricProducer(producer);
     }
 
     /**
@@ -87,7 +88,7 @@ public class PercentileViewManager {
      * @param value       the observation to record
      */
     public void recordMeasurement(String measureName, double value) {
-        recordMeasurement(measureName, value, Tags.getTagger().getCurrentTagContext());
+        recordMeasurement(measureName, value, Baggage.current());
     }
 
     /**
@@ -97,7 +98,7 @@ public class PercentileViewManager {
      * @param value       the observation to record
      * @param tags        the TagContext to use
      */
-    public void recordMeasurement(String measureName, double value, TagContext tags) {
+    public void recordMeasurement(String measureName, double value, Baggage tags) {
         if (areAnyViewsRegisteredForMeasure(measureName)) {
             synchronized (this) {
                 worker.record(measureName, value, getCurrentTime(), tags);
@@ -206,7 +207,7 @@ public class PercentileViewManager {
      * @param time       the timestamp of the observation
      * @param tagContext the tag context of the observation
      */
-    private void recordSynchronous(String measure, double value, Timestamp time, TagContext tagContext) {
+    private void recordSynchronous(String measure, double value, long time, Baggage tagContext) {
         List<PercentileView> views = measuresToViewsMap.get(measure);
         if (views != null) {
             views.forEach(view -> view.insertValue(value, time, tagContext));
@@ -224,10 +225,10 @@ public class PercentileViewManager {
     }
 
     /**
-     * @return the current time as OC timestamp.
+     * @return the current time in nanoseconds.
      */
-    private Timestamp getCurrentTime() {
-        return Timestamp.fromMillis(clock.get());
+    private long getCurrentTime() {
+        return clock.get();
     }
 
     private Optional<PercentileView> updateView(PercentileView existingView, String unit, String description, boolean minEnabled, boolean maxEnabled, Collection<Double> percentiles, long timeWindowMillis, Collection<String> tags, int bufferLimit) {
@@ -264,8 +265,8 @@ public class PercentileViewManager {
     }
 
     @VisibleForTesting
-    Collection<Metric> computeMetrics() {
-        Timestamp now = getCurrentTime();
+    Collection<MetricData> computeMetrics() {
+        long now = getCurrentTime();
         return measuresToViewsMap.values()
                 .stream()
                 .flatMap(Collection::stream)
