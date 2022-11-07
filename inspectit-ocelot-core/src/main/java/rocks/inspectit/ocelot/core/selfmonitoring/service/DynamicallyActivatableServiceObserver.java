@@ -23,13 +23,13 @@ import java.util.Map;
 @Component
 public class DynamicallyActivatableServiceObserver {
     @Getter
-    private static Map<String, Boolean> serviceStateMap = new HashMap<>();
+    private Map<String, Boolean> serviceStateMap = new HashMap<>();
 
     public void updateServiceState(DynamicallyActivatableService service) {
         serviceStateMap.put(service.getName(), service.isEnabled());
     }
 
-    public static String asJson() {
+    public String asJson() {
         ObjectMapper objectMapper = new ObjectMapper();
         String json = "{}";
 

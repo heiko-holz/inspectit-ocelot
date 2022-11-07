@@ -14,6 +14,7 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.util.EntityUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.PropertiesPropertySource;
 import org.springframework.core.env.PropertySource;
 import rocks.inspectit.ocelot.bootstrap.AgentManager;
@@ -99,6 +100,9 @@ public class HttpPropertySourceState {
     private boolean firstFileWriteAttemptSuccessful = true;
 
     private AgentHealth agentHealth = AgentHealth.OK;
+
+    @Autowired
+    private DynamicallyActivatableServiceObserver serviceObserver;
 
     /**
      * Constructor.
@@ -257,7 +261,7 @@ public class HttpPropertySourceState {
         httpGet.setHeader(META_HEADER_PREFIX + "VM-VENDOR", runtime.getVmVendor());
         httpGet.setHeader(META_HEADER_PREFIX + "START-TIME", String.valueOf(runtime.getStartTime()));
         httpGet.setHeader(META_HEADER_PREFIX + "HEALTH", agentHealth.name());
-        httpGet.setHeader(META_HEADER_PREFIX + "SERVICE-STATES-MAP", DynamicallyActivatableServiceObserver.asJson());
+        httpGet.setHeader(META_HEADER_PREFIX + "SERVICE-STATES-MAP", serviceObserver.asJson());
     }
 
     /**
