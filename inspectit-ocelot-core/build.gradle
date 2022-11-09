@@ -22,8 +22,8 @@ test {
 }
 
 
-sourceCompatibility = 1.8 // Java version compatibility to use when compiling Java source.
-targetCompatibility = 1.8 // Java version to generate classes for.
+sourceCompatibility = 1.9 // Java version compatibility to use when compiling Java source.
+targetCompatibility = 1.9 // Java version to generate classes for.
 
 
 dependencies {
