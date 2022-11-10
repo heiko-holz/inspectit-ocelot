@@ -8,8 +8,8 @@ import rocks.inspectit.ocelot.config.model.exporters.ExporterEnabledState;
 import rocks.inspectit.ocelot.config.model.exporters.TransportProtocol;
 import rocks.inspectit.ocelot.core.SpringTestBase;
 import rocks.inspectit.ocelot.core.exporter.JaegerExporterService;
+import rocks.inspectit.ocelot.core.exporter.LoggingMetricExporterService;
 import rocks.inspectit.ocelot.core.exporter.OtlpMetricsExporterService;
-import rocks.inspectit.ocelot.core.exporter.PrometheusExporterService;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -25,7 +25,7 @@ public class DynamicallyActivatableServiceObserverIntTest extends SpringTestBase
     private JaegerExporterService jaegerService;
 
     @Autowired
-    private PrometheusExporterService prometheusExporterService;
+    private LoggingMetricExporterService loggingMetricExporterService;
 
     @Autowired
     private OtlpMetricsExporterService otlpMetricsExporterService;
@@ -36,17 +36,25 @@ public class DynamicallyActivatableServiceObserverIntTest extends SpringTestBase
     void Setup() {
         updateProperties(props -> {
             props.setProperty("inspectit.exporters.metrics.influx.enabled", true);
-            props.setProperty("inspectit.exporters.metrics.prometheus.enabled", ExporterEnabledState.ENABLED);
+            props.setProperty("inspectit.exporters.metrics.logging.enabled", ExporterEnabledState.ENABLED);
             props.setProperty("inspectit.exporters.tracing.jaeger.enabled", ExporterEnabledState.ENABLED);
             props.setProperty("inspectit.exporters.tracing.jaeger.endpoint", "http://localhost:14250/api/traces");
             props.setProperty("inspectit.exporters.tracing.jaeger.protocol", TransportProtocol.GRPC);
         });
 
-        expectedServiceStates = new HashMap<String, Boolean>(Map.of(
-                jaegerService.getName(), true,
-                prometheusExporterService.getName(), true,
-                otlpMetricsExporterService.getName(), false
-        ));
+        expectedServiceStates = new HashMap<>(Map.of(jaegerService.getName(), true, loggingMetricExporterService.getName(), true, otlpMetricsExporterService.getName(), false));
+    }
+
+    void assertExpectedServices() {
+        try {
+            Map<String, Boolean> serviceStateMap = serviceObserver.getServiceStateMap();
+            for (String serviceName : expectedServiceStates.keySet()) {
+                assertThat(serviceStateMap.get(serviceName)).isEqualTo(expectedServiceStates.get(serviceName));
+            }
+        } catch (Exception e) {
+            //ignore
+            System.err.println(e);
+        }
     }
 
     @Test
@@ -68,14 +76,14 @@ public class DynamicallyActivatableServiceObserverIntTest extends SpringTestBase
     void verifyStateUpdatesGetObserved() {
         assertExpectedServices();
 
-        //Update Props 1
+        // update props 1
         updateProperties(props -> {
             props.setProperty("inspectit.exporters.tracing.jaeger.enabled", ExporterEnabledState.DISABLED);
         });
         expectedServiceStates.put(jaegerService.getName(), false);
         assertExpectedServices();
 
-        //Update Props 2
+        // update props 2
         updateProperties(props -> {
             props.setProperty("inspectit.exporters.tracing.jaeger.enabled", ExporterEnabledState.ENABLED);
         });
@@ -85,9 +93,9 @@ public class DynamicallyActivatableServiceObserverIntTest extends SpringTestBase
         //Update Props 3 - Wrong input
         try {
             updateProperties(props -> {
-                props.setProperty("inspectit.exporters.tracing.jaeger.endpoint", "xxx/asd/a:21" );
+                props.setProperty("inspectit.exporters.tracing.jaeger.endpoint", "xxx/asd/a:21");
             });
-        }catch (Exception e){
+        } catch (Exception e) {
             //ignore
         }
 
@@ -95,15 +103,4 @@ public class DynamicallyActivatableServiceObserverIntTest extends SpringTestBase
         assertExpectedServices();
     }
 
-    void assertExpectedServices(){
-        try{
-            Map<String, Boolean> serviceStateMap = serviceObserver.getServiceStateMap();
-
-            for (String serviceName : expectedServiceStates.keySet()) {
-                assertThat(serviceStateMap.get(serviceName)).isEqualTo(expectedServiceStates.get(serviceName));
-            }
-        }catch(Exception e){
-            //ignore
-        }
-    }
 }
